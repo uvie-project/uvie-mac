@@ -7,14 +7,14 @@ let frameworksPath = URL(fileURLWithPath: packageRoot)
     .appendingPathComponent("Frameworks").path
 
 let package = Package(
-    name: "UVieKey",
+    name: "UVieMac",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "UVieKey", targets: ["UVieKey"])
+        .executable(name: "UVieMac", targets: ["UVieMac"])
     ],
     targets: [
         .executableTarget(
-            name: "UVieKey",
+            name: "UVieMac",
             dependencies: [],
             swiftSettings: [
                 .unsafeFlags(["-F", frameworksPath], .when(platforms: [.macOS])),
@@ -35,8 +35,8 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "UVieKeyTests",
-            dependencies: ["UVieKey"],
+            name: "UVieMacTests",
+            dependencies: ["UVieMac"],
             swiftSettings: [
                 .unsafeFlags(["-F", frameworksPath], .when(platforms: [.macOS])),
                 .swiftLanguageMode(.v5),

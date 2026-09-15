@@ -1,4 +1,4 @@
-# AGENTS.md — UVieKey
+# AGENTS.md — UVieMac
 
 ## Build & Test Commands
 
@@ -19,8 +19,8 @@ swift test                                        # Run the integration test sui
 swift test --filter EngineTypingTests             # Engine typing behavior only
 swift test --filter DispatcherTests               # Event-tap dispatch decisions only
 swift test --enable-code-coverage                 # Coverage: .build/debug/codecov/
-xcrun llvm-cov report .build/debug/UVieKeyPackageTests.xctest/Contents/MacOS/UVieKeyPackageTests \
-  -instr-profile=.build/debug/codecov/default.profdata Sources/UVieKey/Core
+xcrun llvm-cov report .build/debug/UVieMacPackageTests.xctest/Contents/MacOS/UVieMacPackageTests \
+  -instr-profile=.build/debug/codecov/default.profdata Sources/UVieMac/Core
 ```
 
 `swift test` requires `Frameworks/libuvie.a` + `Frameworks/Sparkle.framework`
@@ -72,7 +72,7 @@ Protocols/visibility exist purely so tests can intercept side effects:
 - `updateExcludedTapState()` is internal so tests can drive the excluded
   state flip without a real `CGEventTap`.
 
-`makeEventTap()` (Tests/UVieKeyTests/TestSupport.swift) pins every
+`makeEventTap()` (Tests/UVieMacTests/TestSupport.swift) pins every
 environment-dependent flag (auto-capitalize, macro toggle, app lists,
 input method, Fn/custom hotkeys) so tests are deterministic regardless of
 the user's real UserDefaults. Tests that trigger a toggle must re-pin the
@@ -92,7 +92,7 @@ the `AppContextDetecting` stub at every call site).
 
 ## Architecture
 
-- `Sources/UVieKey/Core/` — hot path. `EventTap` (CGEventTap callback on
+- `Sources/UVieMac/Core/` — hot path. `EventTap` (CGEventTap callback on
   the main runloop) dispatches to: CGEvent synthetic injection
   (`EventTap+SyntheticOutput`, posts to `.cgSessionEventTap`), AX text
   injection (`AXTextInjector`, used for Spotlight via `axApps`), or

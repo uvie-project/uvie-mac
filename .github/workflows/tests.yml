@@ -26,7 +26,7 @@ jobs:
           tar xf /tmp/sparkle.tar.xz -C /tmp/sparkle
           cp -R /tmp/sparkle/Sparkle.framework Frameworks/
 
-      # Generates Sources/UVieKey/Generated/Version.swift and fetches the
+      # Generates Sources/UVieMac/Generated/Version.swift and fetches the
       # pinned uvie-rs engine (scripts/fetch-uvie.sh) into Frameworks/.
       - name: Generate version info + fetch uvie engine
         run: ./build.sh

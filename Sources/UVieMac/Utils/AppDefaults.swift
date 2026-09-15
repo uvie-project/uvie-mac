@@ -1,0 +1,63 @@
+import Foundation
+
+/// Shared default app lists used by both EventTap (engine runtime) and
+/// AppsPane (Settings UI). Keeping them in one place prevents drift between
+/// what the engine actually uses and what the UI displays/resets to.
+enum AppDefaults {
+    /// Apps that need the empty-character sentinel before backspace to
+    /// invalidate their autocomplete dropdown (Safari, Notes, TextEdit, Mail,
+    /// iWork, and all Chromium browsers whose omnibox swallows synthetic
+    /// backspaces).
+    static let compoundApps: Set<String> = [
+        "com.apple.Safari",
+        "com.apple.Notes",
+        "com.apple.TextEdit",
+        "com.apple.mail",
+        "com.apple.iWork",
+        // Chromium browsers
+        "com.google.Chrome",
+        "org.chromium.Chromium",
+        "com.brave.Browser",
+        "com.microsoft.edgemac",
+        "com.vivaldi.Vivaldi",
+        "company.thebrowser.Browser", // Arc
+        "ai.perplexity.comet", // Comet
+        "com.openai.atlas", // ChatGPT Atlas
+        "com.browseros.BrowserOS", // BrowserOS
+    ]
+
+    /// Chromium-based browsers that need Shift+Left selection + overwrite
+    /// (instead of plain backspace) when replacing text, to avoid duplicate
+    /// characters in the omnibox.
+    static let chromiumBrowsers: Set<String> = [
+        "com.google.Chrome",
+        "org.chromium.Chromium",
+        "com.brave.Browser",
+        "com.microsoft.edgemac",
+        "com.vivaldi.Vivaldi",
+        "company.thebrowser.Browser", // Arc
+        "ai.perplexity.comet", // Comet
+        "com.openai.atlas", // ChatGPT Atlas
+        "com.browseros.BrowserOS", // BrowserOS
+    ]
+
+    /// Apps that bypass IME entirely (system UI, lock screen, etc.).
+    /// The iOS Simulator is included because it does not forward synthetic
+    /// CGEvents (posted at `.cgSessionEventTap`) to the guest OS — it uses
+    /// its own keyboard routing via simctl/HID. Without bypass, UVieMac
+    /// intercepts keystrokes, consumes the original keyDown, and posts a
+    /// synthetic replacement that the Simulator host receives but never
+    /// delivers to the simulated device, making typing impossible.
+    static let bypassApps: Set<String> = [
+        "com.apple.loginwindow",
+        "com.apple.securityagent",
+        "com.apple.ScreenSaver.Engine",
+        "com.apple.systemuiserver",
+        "com.apple.iphonesimulator",
+    ]
+
+    /// Apps that need Accessibility text injection instead of CGEventTap.
+    static let axApps: Set<String> = [
+        "com.apple.Spotlight",
+    ]
+}

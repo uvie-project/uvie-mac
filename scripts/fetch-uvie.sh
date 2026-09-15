@@ -3,7 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_OWNER="thuupx"
+REPO_OWNER="uvie-project"
 REPO_NAME="uvie-rs"
 VERSION_FILE="$PROJECT_ROOT/uvie-rs-version"
 

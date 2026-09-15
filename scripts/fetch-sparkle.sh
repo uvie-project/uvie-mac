@@ -1,5 +1,5 @@
 #!/bin/bash
-# Fetch and extract Sparkle.framework for building UVieKey with in-app updates.
+# Fetch and extract Sparkle.framework for building UVieMac with in-app updates.
 # Downloads the official Sparkle 2.x release from GitHub.
 set -euo pipefail
 

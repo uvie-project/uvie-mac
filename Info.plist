@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>UVieKey</string>
+	<string>UVieMac</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>UVieKey</string>
+	<string>UVie for Mac</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -25,13 +25,13 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2026 UVieKey</string>
+	<string>Copyright © 2026 UVie for Mac</string>
 	<key>SUAutomaticallyUpdate</key>
 	<true/>
 	<key>SUEnableAutomaticAUpdates</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://thuupx.github.io/UVieKey/appcast.xml</string>
+	<string>https://uvie-project.github.io/UVieMac/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>lsxNkHdBOuoBFwhmz6FQ5T7mWi2A3p2Stg/o3KUev+4=</string>
 	<key>SUShowReleaseNotes</key>

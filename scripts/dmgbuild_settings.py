@@ -1,5 +1,5 @@
-# DMG layout settings for UVieKey
-# Usage: dmgbuild -s scripts/dmgbuild_settings.py -D app=UVieKey.app "UVieKey <version>" UVieKey-<version>-universal.dmg
+# DMG layout settings for UVieMac
+# Usage: dmgbuild -s scripts/dmgbuild_settings.py -D app=UVieKey.app "UVieMac <version>" UVieMac-<version>-universal.dmg
 
 import os
 import plistlib

@@ -1,6 +1,6 @@
-<a href="https://unikorn.vn/p/uviekey?ref=embed-uviekey" target="_blank"><img src="https://unikorn.vn/api/widgets/badge/uviekey/rank?theme=light&type=monthly" alt="UVieKey - Monthly" style="width: 250px; height: 64px;" width="250" height="64" /></a>
+<a href="https://unikorn.vn/p/uviemac?ref=embed-uviemac" target="_blank"><img src="https://unikorn.vn/api/widgets/badge/uviemac/rank?theme=light&type=monthly" alt="UVieMac - Monthly" style="width: 250px; height: 64px;" width="250" height="64" /></a>
 
-# UVieKey
+# UVieMac
 
 Bộ gõ tiếng Việt nhanh, nhẹ và chính xác cho macOS, powered by engine `uvie-rs`.
 
@@ -34,7 +34,7 @@ Bộ gõ tiếng Việt nhanh, nhẹ và chính xác cho macOS, powered by engin
 
 ## Cài đặt
 
-1. Tải `UVieKey-*-universal.dmg` từ [Releases](https://github.com/thuupx/UVieKey/releases).
+1. Tải `UVieMac-*-universal.dmg` từ [Releases](https://github.com/uvie-project/UVieMac/releases).
 2. Mở DMG, kéo `UVieKey.app` vào thư mục `Applications`.
 3. Mở app, làm theo onboarding — cấp quyền **Accessibility** (và **Input Monitoring** trên macOS 15+).
 4. Icon `V` / `E` sẽ xuất hiện trên menu bar.
@@ -79,7 +79,7 @@ Requirements: Rust toolchain, Swift 5.9+, macOS SDK.
 ./build.sh
 
 # Chạy
-.build/debug/UVieKey
+.build/debug/UVieMac
 ```
 
 > Build từ source Rust local: set `UVIE_RS_DIR` trước khi chạy `build.sh`:
@@ -93,21 +93,21 @@ Build release + package:
 # Build Swift app (universal)
 swift build --configuration release --arch arm64
 swift build --configuration release --arch x86_64
-lipo -create .build/arm64-apple-macosx/release/UVieKey .build/x86_64-apple-macosx/release/UVieKey -output .build/release/UVieKey
+lipo -create .build/arm64-apple-macosx/release/UVieMac .build/x86_64-apple-macosx/release/UVieMac -output .build/release/UVieMac
 
 # Bundle .app
 APP="UVieKey.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/Info.plist"
-cp .build/release/UVieKey "$APP/Contents/MacOS/UVieKey"
-chmod +x "$APP/Contents/MacOS/UVieKey"
+cp .build/release/UVieMac "$APP/Contents/MacOS/UVieMac"
+chmod +x "$APP/Contents/MacOS/UVieMac"
 cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 ```
 
 ## Kiến trúc mã nguồn
 
 ```
-Sources/UVieKey/
+Sources/UVieMac/
 ├── App/                    # AppDelegate, entry point
 ├── Core/
 │   ├── EventTap/           # CGEventTap handler (split theo chức năng)
@@ -148,9 +148,9 @@ Secrets cần thiết:
 
 ## Engine
 
-UVieKey sử dụng engine `uvie-rs` — Rust library, `no_std`/`no-alloc` compatible, zero deps.
+UVieMac sử dụng engine `uvie-rs` — Rust library, `no_std`/`no-alloc` compatible, zero deps.
 
-Xem chi tiết kiến trúc và benchmark trong [README của uvie-rs](https://github.com/thuupx/uvie-rs).
+Xem chi tiết kiến trúc và benchmark trong [README của uvie-rs](https://github.com/uvie-project/uvie-rs).
 
 ## License
 

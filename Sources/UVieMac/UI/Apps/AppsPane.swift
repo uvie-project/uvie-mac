@@ -1,0 +1,378 @@
+import SwiftUI
+import AppKit
+
+// MARK: - Apps Pane
+
+struct AppsPane: View {
+    @State private var excludedApps: [AppEntry] = []
+    @State private var compoundApps: [AppEntry] = []
+    @State private var chromiumApps: [AppEntry] = []
+    @State private var showingAppPicker = false
+    @State private var pickerMode: PickerMode = .excluded
+    @State private var availableApps: [RunningApp] = []
+
+    private let defaultExcludedApps: [String] = []
+
+    // Shared with EventTap.swift via AppDefaults — single source of truth.
+    private let defaultCompoundApps: [String] = Array(AppDefaults.compoundApps).sorted()
+
+    private let defaultChromiumApps: [String] = Array(AppDefaults.chromiumBrowsers).sorted()
+
+    enum PickerMode {
+        case excluded
+        case compound
+        case chromium
+    }
+
+    struct AppEntry: Identifiable {
+        let id = UUID()
+        let bundleID: String
+        let icon: NSImage?
+    }
+
+    var body: some View {
+        PaneScroll {
+            PaneSection("Excluded Apps") {
+                SettingsCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Tắt UVie for Mac cho các ứng dụng")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+
+                        Text("Tắt UVie for Mac cho các ứng dụng trong danh sách")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+
+                        Divider()
+
+                        if excludedApps.isEmpty {
+                            Text("Chưa có ứng dụng nào")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.tertiary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.vertical, 20)
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(Array(excludedApps.enumerated()), id: \.element.id) { idx, entry in
+                                    AppRow(bundleID: entry.bundleID, icon: entry.icon) {
+                                        removeExcludedApp(at: idx)
+                                    }
+                                    if idx < excludedApps.count - 1 {
+                                        Divider()
+                                    }
+                                }
+                            }
+                        }
+
+                        Divider()
+
+                        HStack {
+                            Button {
+                                pickerMode = .excluded
+                                showingAppPicker = true
+                            } label: {
+                                Label("Thêm ứng dụng", systemImage: "plus")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.blue)
+
+                            Spacer()
+
+                            Button {
+                                resetExcludedToDefaults()
+                            } label: {
+                                Text("Reset mặc định")
+                                    .font(.system(size: 11))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 4)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                }
+            }
+
+            PaneSection("Compound Apps") {
+                SettingsCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Các ứng dụng cần xử lý đặc biệt")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+
+                        Text("Nếu ứng dụng này có lỗi autocomplete, hãy thêm nó vào danh sách này.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+
+                        Divider()
+
+                        if compoundApps.isEmpty {
+                            Text("Chưa có ứng dụng nào")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.tertiary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.vertical, 20)
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(Array(compoundApps.enumerated()), id: \.element.id) { idx, entry in
+                                    AppRow(bundleID: entry.bundleID, icon: entry.icon) {
+                                        removeCompoundApp(at: idx)
+                                    }
+                                    if idx < compoundApps.count - 1 {
+                                        Divider()
+                                    }
+                                }
+                            }
+                        }
+
+                        Divider()
+
+                        HStack {
+                            Button {
+                                pickerMode = .compound
+                                showingAppPicker = true
+                            } label: {
+                                Label("Thêm ứng dụng", systemImage: "plus")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.blue)
+
+                            Spacer()
+
+                            Button {
+                                resetCompoundToDefaults()
+                            } label: {
+                                Text("Reset mặc định")
+                                    .font(.system(size: 11))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 4)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                }
+            }
+
+            PaneSection("Chromium Browsers") {
+                SettingsCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Chromium Browsers")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+
+                        Text("Nếu bạn đang sử dụng trình duyệt Chromium-based, hãy thêm nó vào danh sách này.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+
+                        Divider()
+
+                        if chromiumApps.isEmpty {
+                            Text("Chưa có ứng dụng nào")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.tertiary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.vertical, 20)
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(Array(chromiumApps.enumerated()), id: \.element.id) { idx, entry in
+                                    AppRow(bundleID: entry.bundleID, icon: entry.icon) {
+                                        removeChromiumApp(at: idx)
+                                    }
+                                    if idx < chromiumApps.count - 1 {
+                                        Divider()
+                                    }
+                                }
+                            }
+                        }
+
+                        Divider()
+
+                        HStack {
+                            Button {
+                                pickerMode = .chromium
+                                showingAppPicker = true
+                            } label: {
+                                Label("Thêm ứng dụng", systemImage: "plus")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.blue)
+
+                            Spacer()
+
+                            Button {
+                                resetChromiumToDefaults()
+                            } label: {
+                                Text("Reset mặc định")
+                                    .font(.system(size: 11))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 4)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                }
+            }
+        }
+        .sheet(isPresented: $showingAppPicker) {
+            AppPickerSheet(availableApps: availableApps) { selectedBundleID in
+                switch pickerMode {
+                case .excluded:
+                    addExcludedApp(selectedBundleID)
+                case .compound:
+                    addCompoundApp(selectedBundleID)
+                case .chromium:
+                    addChromiumApp(selectedBundleID)
+                }
+            }
+        }
+        .onChange(of: showingAppPicker) { isShowing in
+            if isShowing {
+                loadAvailableApps()
+            }
+        }
+        .onAppear {
+            loadExcludedApps()
+            loadCompoundApps()
+            loadChromiumApps()
+        }
+    }
+
+    // MARK: - Helper Methods
+
+    private func loadCompoundApps() {
+        let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customCompoundApps) ?? []
+        let allBundleIDs = defaultCompoundApps + custom
+        compoundApps = allBundleIDs.map { bundleID in
+            AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
+        }
+    }
+
+    private func saveCompoundApps() {
+        let custom = compoundApps.map { $0.bundleID }.filter { !defaultCompoundApps.contains($0) }
+        UserDefaults.standard.set(custom, forKey: DefaultsKey.customCompoundApps)
+    }
+
+    private func addCompoundApp(_ bundleID: String) {
+        compoundApps.append(AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID)))
+        saveCompoundApps()
+    }
+
+    private func removeCompoundApp(at index: Int) {
+        guard index < compoundApps.count else { return }
+        compoundApps.remove(at: index)
+        saveCompoundApps()
+    }
+
+    private func resetCompoundToDefaults() {
+        compoundApps = defaultCompoundApps.map { bundleID in
+            AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
+        }
+        saveCompoundApps()
+    }
+
+    // MARK: - Excluded Apps
+
+    private func loadExcludedApps() {
+        let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customExcludedApps) ?? []
+        let allBundleIDs = defaultExcludedApps + custom
+        excludedApps = allBundleIDs.map { bundleID in
+            AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
+        }
+    }
+
+    private func saveExcludedApps() {
+        let custom = excludedApps.map { $0.bundleID }.filter { !defaultExcludedApps.contains($0) }
+        UserDefaults.standard.set(custom, forKey: DefaultsKey.customExcludedApps)
+    }
+
+    private func addExcludedApp(_ bundleID: String) {
+        excludedApps.append(AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID)))
+        saveExcludedApps()
+    }
+
+    private func removeExcludedApp(at index: Int) {
+        guard index < excludedApps.count else { return }
+        excludedApps.remove(at: index)
+        saveExcludedApps()
+    }
+
+    private func resetExcludedToDefaults() {
+        excludedApps = defaultExcludedApps.map { bundleID in
+            AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
+        }
+        saveExcludedApps()
+    }
+
+    // MARK: - Chromium Apps
+
+    private func loadChromiumApps() {
+        let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customChromiumApps) ?? []
+        let allBundleIDs = defaultChromiumApps + custom
+        chromiumApps = allBundleIDs.map { bundleID in
+            AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
+        }
+    }
+
+    private func saveChromiumApps() {
+        let custom = chromiumApps.map { $0.bundleID }.filter { !defaultChromiumApps.contains($0) }
+        UserDefaults.standard.set(custom, forKey: DefaultsKey.customChromiumApps)
+    }
+
+    private func addChromiumApp(_ bundleID: String) {
+        chromiumApps.append(AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID)))
+        saveChromiumApps()
+    }
+
+    private func removeChromiumApp(at index: Int) {
+        guard index < chromiumApps.count else { return }
+        chromiumApps.remove(at: index)
+        saveChromiumApps()
+    }
+
+    private func resetChromiumToDefaults() {
+        chromiumApps = defaultChromiumApps.map { bundleID in
+            AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
+        }
+        saveChromiumApps()
+    }
+
+    private func loadAvailableApps() {
+        let runningApps = NSWorkspace.shared.runningApplications
+        let currentList: [AppEntry]
+        switch pickerMode {
+        case .excluded:
+            currentList = excludedApps
+        case .compound:
+            currentList = compoundApps
+        case .chromium:
+            currentList = chromiumApps
+        }
+
+        let currentBundleIDs = Set(currentList.map { $0.bundleID })
+
+        availableApps = runningApps
+            .filter { $0.bundleIdentifier != nil && $0.activationPolicy == .regular }
+            .filter { !currentBundleIDs.contains($0.bundleIdentifier!) }
+            .map { app in
+                let icon = AppIconCache.shared.icon(for: app.bundleIdentifier!) ?? app.icon
+                return RunningApp(bundleID: app.bundleIdentifier!, name: app.localizedName ?? "Unknown", icon: icon)
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func appName(from bundleID: String) -> String {
+        let parts = bundleID.split(separator: ".")
+        if let last = parts.last {
+            return String(last)
+        }
+        return bundleID
+    }
+}
