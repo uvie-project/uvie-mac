@@ -111,14 +111,11 @@ jobs:
             -output .build/release/UVieMac
 
       # ── 6. Bundle .app ────────────────────────────────────────────────────
-      # The .app bundle directory is named UVieKey.app (not UVieMac.app) so
-      # Sparkle replaces the existing installation in-place — existing users
-      # have UVieKey.app in /Applications. CFBundleName "UVie for Mac" in
-      # Info.plist controls the Finder display name, so users see "UVie for
-      # Mac" despite the directory name.
+      # CFBundleName "UVie for Mac" in Info.plist controls the Finder
+      # display name; the bundle directory is UVieMac.app.
       - name: Create .app bundle
         run: |
-          APP="UVieKey.app"
+          APP="UVieMac.app"
           CONTENTS="$APP/Contents"
           mkdir -p "$CONTENTS/MacOS"
           mkdir -p "$CONTENTS/Resources"
@@ -148,10 +145,10 @@ jobs:
             --sign "$SIGNING_IDENTITY" \
             --entitlements UVieMac.entitlements \
             --options runtime \
-            UVieKey.app
+            UVieMac.app
 
           # Verify
-          codesign --verify --deep --strict --verbose=2 UVieKey.app
+          codesign --verify --deep --strict --verbose=2 UVieMac.app
 
       # ── 8. Notarize ───────────────────────────────────────────────────────
       - name: Notarize
@@ -161,16 +158,16 @@ jobs:
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
           # Zip for notarization
-          ditto -c -k --keepParent UVieKey.app UVieKey_notarize.zip
+          ditto -c -k --keepParent UVieMac.app UVieMac_notarize.zip
 
-          xcrun notarytool submit UVieKey_notarize.zip \
+          xcrun notarytool submit UVieMac_notarize.zip \
             --apple-id       "$APPLE_ID" \
             --team-id        "$APPLE_TEAM_ID" \
             --password       "$APPLE_APP_PASSWORD" \
             --wait
 
-          xcrun stapler staple UVieKey.app
-          rm UVieKey_notarize.zip
+          xcrun stapler staple UVieMac.app
+          rm UVieMac_notarize.zip
 
       # ── 9. Package DMG ────────────────────────────────────────────────────
       - name: Create DMG
@@ -182,7 +179,7 @@ jobs:
           .venv/bin/pip install dmgbuild
           .venv/bin/dmgbuild \
             -s scripts/dmgbuild_settings.py \
-            -D app=UVieKey.app \
+            -D app=UVieMac.app \
             "UVie for Mac ${VERSION}" \
             "$DMG_NAME"
 
@@ -197,7 +194,7 @@ jobs:
           ZIP_NAME="UVieMac-${VERSION}-universal.zip"
 
           # Create zip for Sparkle (must be a flat zip of the .app)
-          ditto -c -k --keepParent UVieKey.app "$ZIP_NAME"
+          ditto -c -k --keepParent UVieMac.app "$ZIP_NAME"
           ZIP_SIZE=$(stat -f%z "$ZIP_NAME")
 
           # Sign with EdDSA using Sparkle's sign_update tool
@@ -286,7 +283,7 @@ jobs:
 
             ### Installation
             1. Download `UVieMac-*-universal.dmg`
-            2. Open the DMG and drag `UVieKey.app` to `Applications`
+            2. Open the DMG and drag `UVieMac.app` to `Applications`
             3. Launch UVie for Mac from Applications
 
             > This build embeds the [uvie-rs](https://github.com/uvie-project/uvie-rs) engine as a prebuilt static library.

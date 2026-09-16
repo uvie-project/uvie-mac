@@ -13,9 +13,9 @@ import os
 final class Logger {
     static let shared = Logger()
 
-    private let osLogger = os.Logger(subsystem: "com.thuupx.UVieKey", category: "engine")
+    private let osLogger = os.Logger(subsystem: "com.uvie-project.UVieMac", category: "engine")
 
-    private let logQueue = DispatchQueue(label: "com.thuupx.UVieKey.logger", qos: .utility)
+    private let logQueue = DispatchQueue(label: "com.uvie-project.UVieMac.logger", qos: .utility)
     private let maxFileSize: Int = 1_048_576 // 1 MB
     private let maxArchives = 3
     private let logURL: URL

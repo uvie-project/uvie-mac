@@ -1,10 +1,10 @@
 # DMG layout settings for UVieMac
-# Usage: dmgbuild -s scripts/dmgbuild_settings.py -D app=UVieKey.app "UVieMac <version>" UVieMac-<version>-universal.dmg
+# Usage: dmgbuild -s scripts/dmgbuild_settings.py -D app=UVieMac.app "UVieMac <version>" UVieMac-<version>-universal.dmg
 
 import os
 import plistlib
 
-application = defines.get("app", "UVieKey.app")
+application = defines.get("app", "UVieMac.app")
 appname = os.path.basename(application)
 
 

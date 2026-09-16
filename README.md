@@ -1,4 +1,4 @@
-<a href="https://unikorn.vn/p/uviemac?ref=embed-uviemac" target="_blank"><img src="https://unikorn.vn/api/widgets/badge/uviemac/rank?theme=light&type=monthly" alt="UVieMac - Monthly" style="width: 250px; height: 64px;" width="250" height="64" /></a>
+<a href="https://unikorn.vn/p/uviekey?ref=embed-uviekey" target="_blank"><img src="https://unikorn.vn/api/widgets/badge/uviekey/rank?theme=light&type=monthly" alt="UVieKey - Monthly" style="width: 250px; height: 64px;" width="250" height="64" /></a>
 
 # UVieMac
 
@@ -35,7 +35,7 @@ Bộ gõ tiếng Việt nhanh, nhẹ và chính xác cho macOS, powered by engin
 ## Cài đặt
 
 1. Tải `UVieMac-*-universal.dmg` từ [Releases](https://github.com/uvie-project/UVieMac/releases).
-2. Mở DMG, kéo `UVieKey.app` vào thư mục `Applications`.
+2. Mở DMG, kéo `UVieMac.app` vào thư mục `Applications`.
 3. Mở app, làm theo onboarding — cấp quyền **Accessibility** (và **Input Monitoring** trên macOS 15+).
 4. Icon `V` / `E` sẽ xuất hiện trên menu bar.
 
@@ -96,7 +96,7 @@ swift build --configuration release --arch x86_64
 lipo -create .build/arm64-apple-macosx/release/UVieMac .build/x86_64-apple-macosx/release/UVieMac -output .build/release/UVieMac
 
 # Bundle .app
-APP="UVieKey.app"
+APP="UVieMac.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/Info.plist"
 cp .build/release/UVieMac "$APP/Contents/MacOS/UVieMac"

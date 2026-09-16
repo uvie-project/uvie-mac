@@ -10,7 +10,7 @@
             by `sign_update` (from Sparkle's bin/).
             The enclosure URL points to the zip asset uploaded to GitHub
             Releases. Sparkle downloads, verifies the signature, extracts,
-            replaces UVieKey.app, and relaunches.
+            replaces UVieMac.app, and relaunches.
         -->
     </channel>
 </rss>
