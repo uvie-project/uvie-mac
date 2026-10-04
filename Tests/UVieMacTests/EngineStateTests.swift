@@ -111,10 +111,26 @@ final class EngineStateTests: XCTestCase {
         for ch in "don" { _ = engine.feed(char: ch) }
         _ = engine.commit() // commits "don"; caret 1 right of the word end
 
-        // caretBack 1 is mid-word ("don" ends at 0) — declined.
-        XCTAssertNil(engine.editAt(caretBack: 1, char: "s"))
-        // caretBack 0 = the newest word's end → handled.
-        XCTAssertNotNil(engine.editAt(caretBack: 0, char: "s"))
+        // caretBack 1 is mid-word ("don" ends at 0) — fires as a mid-word
+        // edit: backspace "do" left of the caret, forward-delete the "n"
+        // tail, post the re-rendered "dón".
+        let edit = engine.editAt(caretBack: 1, char: "s")
+        XCTAssertNotNil(edit)
+        XCTAssertEqual(edit?.backspaces, 2)
+        XCTAssertEqual(edit?.forwardDeletes, 1)
+        XCTAssertEqual(edit?.suffix, "dón")
+        // The successful edit leaves the engine composing "dón": commit
+        // it to re-record the word in the edit history.
+        _ = engine.commit()
+
+        // caretBack 4 sits at the word start — past the last raw key, so
+        // nothing to edit → declined.
+        XCTAssertNil(engine.editAt(caretBack: 4, char: "s"))
+
+        // caretBack 0 = the newest word's end → handled (word-end edit).
+        let endEdit = engine.editAt(caretBack: 0, char: "j")
+        XCTAssertNotNil(endEdit)
+        XCTAssertEqual(endEdit?.forwardDeletes, 0)
     }
 
     func test_inputMethodSwitch_changesOutput() {

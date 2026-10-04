@@ -52,7 +52,9 @@ final class EngineTypingTests: XCTestCase {
         XCTAssertEqual(typeString("As"), "Á")
         XCTAssertEqual(typeString("aS"), "á")
         XCTAssertEqual(typeString("VIEJS"), "VIEJS")
-        XCTAssertEqual(typeString("Viets"), "Viets")
+        // 's' after "Viet" is a tone key: the [i,e]+t rhyme resolves to
+        // iêt, so "Viets" is the real Telex spelling of "Viết".
+        XCTAssertEqual(typeString("Viets"), "Viết")
     }
 
     func test_englishDictionaryOverride_typesLiterally() {
@@ -64,12 +66,16 @@ final class EngineTypingTests: XCTestCase {
     }
 
     func test_englishWithoutDictionary_keepsDocumentedBehavior() {
-        // "user"/"banana" are excluded from the dictionary (V-C-V split of
-        // valid syllables); "chaos"/"most" transform to real Vietnamese words;
-        // "reset" is not in the dictionary and garbles — all documented,
-        // intentionally locked so changes are conscious decisions.
-        XCTAssertEqual(typeString("user"), "usẻ")
-        XCTAssertEqual(typeString("banana"), "banana")
+        // "user"/"banana" are excluded from the dictionary (their renders
+        // segment into real Vietnamese words); "chaos"/"most" transform to
+        // real Vietnamese words; "reset" is not in the dictionary and
+        // garbles — all documented, intentionally locked so changes are
+        // conscious decisions.
+        // Since the centering-diphthong resolution: "user" is the real
+        // Telex spelling of "uể" (s = sắc, e joins the uê nucleus, r =
+        // huyền) and "banana" V-C-V splits into "bân" + "na".
+        XCTAssertEqual(typeString("user"), "uể")
+        XCTAssertEqual(typeString("banana"), "bânna")
         XCTAssertEqual(typeString("chaos"), "cháo")
         XCTAssertEqual(typeString("most"), "mót")
         XCTAssertEqual(typeString("reset"), "rết")
@@ -80,7 +86,11 @@ final class EngineTypingTests: XCTestCase {
         XCTAssertEqual(typeString("123"), "123")
         XCTAssertEqual(typeString("hello123"), "hello123")
         XCTAssertEqual(typeString("viet"), "viet")
-        XCTAssertEqual(typeString("viets"), "viets")
+        // 's' is a tone key, not a literal: [i,e]+t is a valid rhyme
+        // state, so 's' lands the sắc tone on the resolved ê ("viết") —
+        // the centering-diphthong resolution added for UniKey-style
+        // post-coda tone keys.
+        XCTAssertEqual(typeString("viets"), "viết")
     }
 
     func test_viet_encodings() {

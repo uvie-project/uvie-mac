@@ -512,22 +512,34 @@ extension EventTap {
         // Apply auto-capitalize if at sentence start
         let transformedChar = applyAutoCapitalize(to: firstChar)
 
-        // Post-commit editing (LabanKey-style): the caret sits at the end of
+        // Post-commit editing (LabanKey-style): the caret sits at or inside
         // a committed word (editCaretBack >= 0) and the user types a key —
-        // re-enter that word with the key appended and re-render it in place.
-        // The engine walks its committed-word history and only fires when
+        // re-enter that word with the key applied and re-render it in place.
+        // The engine walks its committed-word history and fires when
         // caretBack exactly matches a word-end boundary (0 = newest word,
-        // + rendered_len + 1 per older word); off-boundary carets (mid-word,
-        // double spaces, unseen jumps) decline and the key feeds normally.
+        // + rendered_len + 1 per older word) or lands strictly inside a
+        // word (mid-word edit); unmatched carets (word start, unseen jumps)
+        // decline and the key feeds normally.
+        // Mid-word edits return forwardDeletes > 0: the old word's tail
+        // (chars right of the caret) is removed first, then the chars left
+        // of the caret are backspaced and the whole re-rendered word is
+        // posted — the caret ends at the edited word's end.
         // Typing at caretBack < 0 (right of the newest word, the normal
         // position after a commit space) types a fresh word without
         // disturbing the history.
         if editCommittedEnabled, !isAXApp, editCaretBack >= 0, !_engine.isComposing,
-           let (bs, out) = _engine.editAt(caretBack: editCaretBack, char: transformedChar) {
+           let (bs, fwdDel, out) = _engine.editAt(caretBack: editCaretBack, char: transformedChar) {
             if Logger.shared.keystrokeTraceEnabled {
-                Logger.shared.keystroke("edit-at \(editCaretBack) char='\(transformedChar)' bs=\(bs) out='\(out)' app=\(app)")
+                Logger.shared.keystroke("edit-at \(editCaretBack) char='\(transformedChar)' bs=\(bs) fwd=\(fwdDel) out='\(out)' app=\(app)")
             }
             updateSentenceStartState(after: firstChar)
+            if fwdDel > 0 {
+                if isCompoundApp {
+                    outputSink.applyCompoundForwardDeletes(fwdDel)
+                } else {
+                    outputSink.applyForwardDeletes(fwdDel)
+                }
+            }
             if bs > 0 {
                 if isCompoundApp {
                     outputSink.applyCompoundBackspaces(bs: bs, out: out)

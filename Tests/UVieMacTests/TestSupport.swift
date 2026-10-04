@@ -12,9 +12,12 @@ final class RecordingSink: SyntheticOutputSink {
         let arg: String
 
         static func backspaces(_ n: Int) -> Call { Call(method: "backspaces", arg: "\(n)") }
+        static func forwardDeletes(_ n: Int) -> Call { Call(method: "forwardDeletes", arg: "\(n)") }
         static func text(_ s: String) -> Call { Call(method: "text", arg: s) }
         static func compound(_ bs: Int, _ out: String) -> Call { Call(method: "compoundBackspaces", arg: "\(bs)|\(out)") }
+        static func compoundForward(_ n: Int) -> Call { Call(method: "compoundForwardDeletes", arg: "\(n)") }
         static func selection(_ n: Int) -> Call { Call(method: "selectionBackspaces", arg: "\(n)") }
+        static func selectionForward(_ n: Int) -> Call { Call(method: "selectionForwardDeletes", arg: "\(n)") }
         static func emptyChar() -> Call { Call(method: "emptyChar", arg: "") }
     }
 
@@ -32,8 +35,20 @@ final class RecordingSink: SyntheticOutputSink {
         calls.append(.backspaces(count))
     }
 
+    func applyForwardDeletes(_ count: Int) {
+        calls.append(.forwardDeletes(count))
+    }
+
+    func applyCompoundForwardDeletes(_ count: Int) {
+        calls.append(.compoundForward(count))
+    }
+
     func applySelectionBackspaces(_ count: Int) {
         calls.append(.selection(count))
+    }
+
+    func applySelectionForwardDeletes(_ count: Int) {
+        calls.append(.selectionForward(count))
     }
 
     func sendEmptyCharacter() {

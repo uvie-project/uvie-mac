@@ -193,20 +193,20 @@ final class DispatcherTests: XCTestCase {
         XCTAssertEqual(sink.calls, [.backspaces(2), .text("ón")])
     }
 
-    func test_editCommittedWord_midWordCaretPassesThrough() {
+    func test_editCommittedWord_midWordCaretEdits() {
         for ch in "don" {
             assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
         }
         assertPassed(send(tap, .keyDown, keyDownEvent(49)))
-        // Two arrow-lefts put the caret mid-word (editCaretBack > 0).
+        // Two arrow-lefts put the caret mid-word ("do|n", editCaretBack = 1).
         assertPassed(send(tap, .keyDown, keyDownEvent(123)))
         assertPassed(send(tap, .keyDown, keyDownEvent(123)))
 
-        // Typing mid-word passes through as a fresh feed; the engine was
-        // reset, so the output is just the raw char.
+        // Mid-word edit: the "n" tail is forward-deleted, "do" is
+        // backspaced, and the re-rendered "dón" is posted.
         sink.reset()
         assertConsumed(send(tap, .keyDown, keyDownEvent(1, unicode: "s")))
-        XCTAssertEqual(sink.calls, [.text("s")])
+        XCTAssertEqual(sink.calls, [.forwardDeletes(1), .backspaces(2), .text("dón")])
     }
 
     /// Real hardware arrow keyDowns carry function-key flags

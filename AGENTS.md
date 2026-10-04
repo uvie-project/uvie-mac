@@ -42,7 +42,8 @@ Tests simulate user keystrokes WITHOUT touching the host session:
   and assert consume/pass-through decisions plus the injection plan.
   Includes the Cmd+Space → Spotlight refresh-budget regression test, the
   post-commit word-editing flows (arrow-back + tone key, backspace-arms,
-  mid-word pass-through, mouse-down disarm), the custom global hotkey
+  mid-word forward-delete + backspace + full re-render, mouse-down
+  disarm), the custom global hotkey
   (in-tap detection: key combos + modifier-only chord taps), the Fn tap
   toggle (Globe key, flagsChanged, debounce, stale-state), English mode,
   non-Latin layout auto-disable, AX-mode routing, excluded-tap state, and
@@ -135,19 +136,29 @@ the `AppContextDetecting` stub at every call site).
 ## Post-commit word editing (LabanKey-style)
 
 Type a word, commit it (space/Enter), press **Left arrow** to step the caret
-back onto the word end, then type a tone/modifier key — the committed word is
-re-rendered in place (`don` + space + ← + `s` → `dón`). Mid-sentence editing
-works too: arrow back onto ANY of the last 8 committed words (each word-end
-boundary is one arrow step past the newer words' ends) and type. Implemented
-by:
+back onto the word end — or INTO the word — then type a tone/modifier key —
+the committed word is re-rendered in place (`don` + space + ← + `s` → `dón`,
+or caret `do|n` + `s` → `dón`). Mid-sentence editing works too: arrow back
+onto ANY of the last 8 committed words (each word-end boundary is one arrow
+step past the newer words' ends) and type. Implemented by:
 
 - **Engine ring** (`uvie-rs`): `commit_diff()` records
   `(raw, rendered)` per committed word; `uvie_engine_edit_at(caret_back, ch)`
   walks the ring from the newest backward accumulating `rendered_len + 1`
-  boundary char per older word, and fires only when `caret_back` EXACTLY
-  matches a word-end boundary (0 = newest word). The host's tracked offset
+  boundary char per older word, and fires when `caret_back` EXACTLY
+  matches a word-end boundary (0 = newest word) or lands strictly inside
+  a word (mid-word edit). The host's tracked offset
   is the ground truth: any model drift (double spaces, pastes, unseen jumps)
   declines safely — never a wrong-span deletion.
+- **Mid-word edits** (`forwardDeletes > 0`): the engine rewrites the whole
+  word — backspaces cover the rendered chars left of the caret,
+  `forwardDeletes` covers the old word's tail right of the caret, and the
+  posted suffix is the full re-rendered word. The host removes the tail
+  FIRST (`applyCompoundForwardDeletes` — Shift+Right selection + one
+  Forward Delete in native fields, plain forward-deletes in Chromium web
+  content where synthetic selection doesn't take), then the left part
+  through the normal compound-aware path, then posts the word. The caret
+  lands at the edited word's end.
 - **Ring truncation on edit**: the edited word AND all newer entries are
   popped (their anchor geometry is stale once the target is re-entered as
   the composing word); older entries survive and stay editable.
@@ -176,10 +187,11 @@ by:
 - Gated by `DefaultsKey.editCommittedWords` (default ON, cached in
   `editCommittedEnabled`, refreshed on settings changes). Disabled for AX
   apps (Spotlight) — AX injection rewrites the whole field.
-- Known limits: mid-word caret editing passes through (would need
-  after-caret tail preservation + caret restoration); the ring assumes
+- Known limits: the ring assumes
   exactly one boundary char between consecutive commits (drift declines
-  safely); mouse/selection/Tab resets recover.
+  safely); mouse/selection/Tab resets recover. Mid-word edits can't
+  restore the caret to its original position — after an edit it sits at
+  the word's end (the engine is composing it).
 
 ## Notes
 
