@@ -209,6 +209,37 @@ final class DispatcherTests: XCTestCase {
         XCTAssertEqual(sink.calls, [.forwardDeletes(1), .backspaces(2), .text("dón")])
     }
 
+    func test_escapeRestoresEnglishRawWhileComposing() {
+        // "vieet" renders "viêt"; Escape erases the render and posts the
+        // raw keystrokes back, consuming the key (no Escape reaches the app).
+        let keyCodes: [Character: Int64] = ["v": 9, "i": 34, "e": 14, "t": 17]
+        for ch in "vieet" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCodes[ch]!, unicode: String(ch))), "char \(ch)")
+        }
+        sink.reset()
+        assertConsumed(send(tap, .keyDown, keyDownEvent(53)))
+        XCTAssertEqual(sink.calls, [.backspaces(4), .text("vieet")])
+        XCTAssertFalse(tap._engine.isComposing)
+    }
+
+    func test_escapePassesThroughWhenRenderMatchesRaw() {
+        // "abc" renders literally — nothing to restore, so Escape keeps its
+        // normal role (dismiss dialogs etc.) and passes through.
+        let keyCodes: [Character: Int64] = ["a": 0, "b": 11, "c": 8]
+        for ch in "abc" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCodes[ch]!, unicode: String(ch))), "char \(ch)")
+        }
+        sink.reset()
+        assertPassed(send(tap, .keyDown, keyDownEvent(53)))
+        XCTAssertTrue(sink.calls.isEmpty)
+    }
+
+    func test_escapePassesThroughWhenIdle() {
+        // Not composing at all — Escape passes through untouched.
+        assertPassed(send(tap, .keyDown, keyDownEvent(53)))
+        XCTAssertTrue(sink.calls.isEmpty)
+    }
+
     /// Real hardware arrow keyDowns carry function-key flags
     /// (.maskSecondaryFn + .maskNumericPad) even with no modifier held.
     /// The modifier-cursor reset must NOT swallow them, or the committed
