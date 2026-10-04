@@ -36,7 +36,7 @@ func uvie_engine_backspace(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePoi
 func uvie_engine_commit(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int) -> Int
 
 @_silgen_name("uvie_engine_edit_at")
-func uvie_engine_edit_at(_ engine: OpaquePointer?, _ caret_back: Int, _ ch: CChar, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int) -> Int
+func uvie_engine_edit_at(_ engine: OpaquePointer?, _ caret_back: Int, _ ch: CChar, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int, _ out_fwd_del: UnsafeMutablePointer<Int>?) -> Int
 
 @_silgen_name("uvie_engine_is_composing")
 func uvie_engine_is_composing(_ engine: OpaquePointer?) -> Int32
@@ -141,19 +141,25 @@ final class EngineBridge {
     /// Re-enter a committed word with `char` appended to its raw keystrokes
     /// (LabanKey-style post-commit editing). `caretBack` is the caret
     /// distance (screen chars) back to the end of the newest committed word;
-    /// it must land exactly on the target word's end boundary (0 = the
-    /// newest word, + rendered_len + 1 per older word). Returns
-    /// (backspaces, new_output) when handled, nil when there is no matching
-    /// boundary (the caller then feeds the key normally).
-    func editAt(caretBack: Int, char: Character) -> (backspaces: Int, suffix: String)? {
+    /// it must land exactly on a word-end boundary (0 = the newest word,
+    /// + rendered_len + 1 per older word) or strictly inside a word
+    /// (mid-word edit). Returns (backspaces, forwardDeletes, new_output)
+    /// when handled, nil when there is no match (the caller then feeds the
+    /// key normally). `backspaces` deletes the rendered chars left of the
+    /// caret; `forwardDeletes` is 0 for word-end edits and the old word's
+    /// tail length for mid-word edits — the host must forward-delete that
+    /// many chars before inserting `new_output` (the whole re-rendered
+    /// word).
+    func editAt(caretBack: Int, char: Character) -> (backspaces: Int, forwardDeletes: Int, suffix: String)? {
         guard let engine, caretBack >= 0 else { return nil }
         // Only ASCII keys are feedable; non-ASCII passes 0 which the engine
         // treats as "not handled".
         guard let ascii = char.asciiValue else { return nil }
         let byte = CChar(ascii)
-        let r = uvie_engine_edit_at(engine, caretBack, byte, &scratch, Self.bufferCapacity)
+        var fwdDel = 0
+        let r = uvie_engine_edit_at(engine, caretBack, byte, &scratch, Self.bufferCapacity, &fwdDel)
         guard r > 0 else { return nil }
-        return (r - 1, String(cString: scratch))
+        return (r - 1, fwdDel, String(cString: scratch))
     }
 
     func reset() {

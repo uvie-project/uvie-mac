@@ -7,8 +7,11 @@ import Cocoa
 /// with simulated keystrokes without touching the host session.
 protocol SyntheticOutputSink: AnyObject {
     func applyCompoundBackspaces(bs: Int, out: String)
+    func applyCompoundForwardDeletes(_ count: Int)
     func applyBackspaces(_ count: Int)
+    func applyForwardDeletes(_ count: Int)
     func applySelectionBackspaces(_ count: Int)
+    func applySelectionForwardDeletes(_ count: Int)
     func sendEmptyCharacter()
     func postText(_ string: String)
 }
@@ -56,6 +59,56 @@ extension EventTap {
             }
             let adjustedBs = bs + (needsEmptyChar ? 1 : 0)
             applyBackspaces(adjustedBs)
+        }
+    }
+
+    /// Forward-delete for compound apps — the mid-word-edit tail removal
+    /// counterpart to `applyCompoundBackspaces`.
+    ///
+    /// Chromium web contenteditable fields don't establish a selection from
+    /// synthetic Shift+Right (same limitation as Shift+Left documented on
+    /// `applyCompoundBackspaces`), so they take plain forward-deletes.
+    /// Everywhere else the tail is selected with Shift+Right and removed
+    /// with a single Forward Delete — one real delete event on a selection
+    /// doesn't hit the duplicated-backspace bug that motivated the
+    /// selection-based strategy.
+    func applyCompoundForwardDeletes(_ count: Int) {
+        if !isChromium || !isFocusedFieldWebContent() {
+            applySelectionForwardDeletes(count)
+            applyForwardDeletes(1)
+        } else {
+            applyForwardDeletes(count)
+        }
+    }
+
+    /// Forward-deletes (kVK_ForwardDelete). Deletes `count` chars right of
+    /// the caret — used by mid-word edits to remove the old word's tail
+    /// before the re-rendered word is posted.
+    ///
+    /// Only posts keyDown — same rationale as `applyBackspaces`.
+    func applyForwardDeletes(_ count: Int) {
+        guard let eventSource, count > 0 else { return }
+        perfNoteEvent(count)
+        for _ in 0..<count {
+            let down = CGEvent(keyboardEventSource: eventSource, virtualKey: 117, keyDown: true)
+            down?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
+            down?.post(tap: .cgSessionEventTap)
+        }
+    }
+
+    /// Shift+Right Arrow selection of `count` chars right of the caret —
+    /// the mid-word-edit tail. The caller removes the selection with a
+    /// forward-delete (see `applyCompoundForwardDeletes`).
+    ///
+    /// Only posts keyDown — same rationale as `applySelectionBackspaces`.
+    func applySelectionForwardDeletes(_ count: Int) {
+        guard let eventSource, count > 0 else { return }
+        perfNoteEvent(count)
+        for _ in 0..<count {
+            let down = CGEvent(keyboardEventSource: eventSource, virtualKey: 124, keyDown: true)
+            down?.flags = .maskShift
+            down?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
+            down?.post(tap: .cgSessionEventTap)
         }
     }
 
