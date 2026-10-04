@@ -28,7 +28,7 @@ final class UpdateManager {
     func checkForUpdates() {
         if let controller {
             controller.checkForUpdates(nil)
-        } else if let url = URL(string: "https://github.com/uvie-project/UVieMac/releases") {
+        } else if let url = URL(string: "https://github.com/uvie-project/uvie-mac/releases") {
             NSWorkspace.shared.open(url)
         }
     }

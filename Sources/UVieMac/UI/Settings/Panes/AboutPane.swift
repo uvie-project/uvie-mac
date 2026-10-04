@@ -25,7 +25,7 @@ struct AboutPane: View {
                         .foregroundStyle(.secondary)
 
                     // Changelog link
-                    Link(destination: URL(string: "https://github.com/uvie-project/UVieMac/releases")!) {
+                    Link(destination: URL(string: "https://github.com/uvie-project/uvie-mac/releases")!) {
                         HStack(spacing: 4) {
                             Image(systemName: "doc.text")
                                 .font(.system(size: 10))
@@ -112,11 +112,11 @@ struct AboutPane: View {
             Divider()
 
             HStack(spacing: 0) {
-                aboutLink("link",                  "GitHub",     "https://github.com/uvie-project/UVieMac")
+                aboutLink("link",                  "GitHub",     "https://github.com/uvie-project/uvie-mac")
                 Divider().frame(height: 20)
                 bugReportButton
                 Divider().frame(height: 20)
-                aboutLink("arrow.down.circle",     "Cập nhật",   "https://github.com/uvie-project/UVieMac/releases")
+                aboutLink("arrow.down.circle",     "Cập nhật",   "https://github.com/uvie-project/uvie-mac/releases")
             }
             .padding(.vertical, 10)
         }

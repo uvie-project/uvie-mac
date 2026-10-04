@@ -140,7 +140,7 @@ struct BugReportGuide: View {
     }
 
     private func openGitHubIssues() {
-        if let url = URL(string: "https://github.com/uvie-project/UVieMac/issues/new") {
+        if let url = URL(string: "https://github.com/uvie-project/uvie-mac/issues/new") {
             NSWorkspace.shared.open(url)
         }
     }

@@ -34,7 +34,7 @@ Bộ gõ tiếng Việt nhanh, nhẹ và chính xác cho macOS, powered by engin
 
 ## Cài đặt
 
-1. Tải `UVieMac-*-universal.dmg` từ [Releases](https://github.com/uvie-project/UVieMac/releases).
+1. Tải `UVieMac-*-universal.dmg` từ [Releases](https://github.com/uvie-project/uvie-mac/releases).
 2. Mở DMG, kéo `UVieMac.app` vào thư mục `Applications`.
 3. Mở app, làm theo onboarding — cấp quyền **Accessibility** (và **Input Monitoring** trên macOS 15+).
 4. Icon `V` / `E` sẽ xuất hiện trên menu bar.

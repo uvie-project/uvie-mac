@@ -20,7 +20,7 @@ final class UpdateChecker: ObservableObject {
     @Published private(set) var isChecking: Bool = false
 
     /// GitHub repo path used for the API calls.
-    private let repo = "uvie-project/UVieMac"
+    private let repo = "uvie-project/uvie-mac"
     /// Poll interval — 24 hours.
     private let interval: TimeInterval = 24 * 60 * 60
     private var timer: Timer?
