@@ -41,6 +41,8 @@ Bộ gõ tiếng Việt nhanh, nhẹ và chính xác cho macOS, powered by engin
 
 > Nếu macOS chặn vì Gatekeeper: vào **System Settings → Privacy & Security** và chọn **Open Anyway**.
 
+> **Đang dùng UVieKey 1.x?** Bản 1.x không tự cập nhật được lên 2.x (đổi bundle id và feed). Tải DMG ở trên, kéo `UVieMac.app` vào `Applications`, rồi xóa `UVieKey.app` cũ.
+
 ## Cách dùng
 
 - **Chuyển tiếng Việt / English**: click icon menu bar, nhấn `Fn`, hoặc phím tắt tuỳ chỉnh.
