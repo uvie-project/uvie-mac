@@ -434,9 +434,34 @@ extension EventTap {
                 return Unmanaged.passRetained(event)
             }
 
-            // Escape cancels the composing word — reset without committing,
-            // matching user expectation that Esc discards in-progress input.
+            // Escape while composing restores the raw keystrokes of the
+            // current word (EVKey-style "restore English"): erase the
+            // rendered form, post the literal raw chars, drop the
+            // composition, and consume the key. When the render already
+            // equals the raw input there is nothing to restore, so the
+            // normal cancel applies and Escape reaches the app.
             if keyCode == 53 {
+                if _engine.isComposing {
+                    let out = _engine.currentOutput()
+                    let raw = _engine.rawChars()
+                    if raw != out {
+                        let bs = out.count
+                        if isCompoundApp {
+                            outputSink.applyCompoundBackspaces(bs: bs, out: raw)
+                        } else {
+                            outputSink.applyBackspaces(bs)
+                        }
+                        outputSink.postText(raw)
+                        _engine.reset()
+                        editCaretBack = 0
+                        invalidateWebContentCache()
+                        perfEnd("break-esc-restore", keyCode: keyCode, app: app)
+                        return nil
+                    }
+                }
+                // Escape cancels the composing word — reset without
+                // committing, matching user expectation that Esc discards
+                // in-progress input.
                 _engine.reset()
                 editCaretBack = 0
                 perfEnd("break-esc", keyCode: keyCode, app: app)

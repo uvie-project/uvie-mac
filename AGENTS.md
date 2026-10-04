@@ -193,6 +193,15 @@ step past the newer words' ends) and type. Implemented by:
   restore the caret to its original position — after an edit it sits at
   the word's end (the engine is composing it).
 
+## Escape restores English (EVKey-style)
+
+Escape while the engine is composing restores the raw keystrokes of the
+current word: the rendered form is erased (compound-aware backspaces)
+and the literal raw chars are posted — `"viêt"` + Esc → `"vieet"`.
+Consumed only when `rawChars() != currentOutput()`; when the render
+already equals the raw input, or the engine is idle, Escape passes
+through normally so the app still receives it.
+
 ## Notes
 
 - Synthetic events are tagged with `eventSourceStateID = 0x55564945`
