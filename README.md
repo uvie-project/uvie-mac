@@ -13,6 +13,9 @@ Bộ gõ tiếng Việt nhanh, nhẹ và chính xác cho macOS, powered by engin
 - **Nhớ ngôn ngữ theo app**: tự động bật/tắt tiếng Việt cho từng ứng dụng.
 - **Tự động tắt** khi detect bàn phím không Latin (Nhật, Hàn, Trung, Nga...).
 - **Macro**: gõ tắt, ví dụ `mk` → `mình không`.
+- **Sửa từ đã gõ**: lùi con trỏ về một trong 8 từ gần nhất — kể cả vào giữa từ — rồi gõ phím dấu, từ được dựng lại ngay tại chỗ.
+- **Khôi phục tiếng Anh bằng Escape**: nhấn `Esc` để trả lại đúng chuỗi phím đã gõ khi dấu đặt sai ý (`viêt` → `vieet`).
+- **Hiểu tiếng Anh**: từ điển ~15.000 từ giữ nguyên chữ tiếng Anh (`permission`, `system`), không bị đổi thành tiếng Việt.
 - **Fn tap toggle**: nhấn nhanh `Fn` để chuyển Anh/Việt.
 - **Phím tắt tuỳ chỉnh**: cấu hình phím tắt toàn hệ thống để chuyển ngôn ngữ.
 - **AX mode**: hoạt động trong Spotlight và secure text fields.
@@ -56,6 +59,7 @@ Bộ gõ tiếng Việt nhanh, nhẹ và chính xác cho macOS, powered by engin
 | Phím tắt tuỳ chỉnh (chỉ phím bổ trợ) | Giữ `⌘⇧` (hoặc tổ hợp modifier bất kỳ) rồi nhấn **Xong** khi đặt phím — nhấn-thả modifier để chuyển Anh / Việt |
 | `Option + Backspace` | Xóa từ — OS xử lý, engine reset |
 | `Shift + Backspace` | Xóa từng ký tự, giữ nguyên case |
+| `Escape` (khi đang gõ) | Khôi phục chuỗi phím gốc của từ đang gõ (`viêt` → `vieet`); không có gì để khôi phục thì Esc hoạt động bình thường |
 
 ## Cài đặt
 
