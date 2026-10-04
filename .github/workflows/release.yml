@@ -218,7 +218,7 @@ jobs:
           ED_SIG="${ED_SIG}"
           TAG="${GITHUB_REF_NAME:-v${VERSION}}"
           PUB_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
-          ZIP_URL="https://github.com/uvie-project/UVieMac/releases/download/${TAG}/${ZIP_NAME}"
+          ZIP_URL="https://github.com/uvie-project/uvie-mac/releases/download/${TAG}/${ZIP_NAME}"
 
           # Fail early if EdDSA signature is empty — Sparkle will reject
           # the update without a valid signature.
