@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>UVieMac Changelog</title>
+        <description>Most recent changes with links to updates.</description>
+        <language>vi</language>
+        <!--
+            This appcast is updated automatically by the CI release workflow.
+            Each release adds a new <item> with the EdDSA signature generated
+            by `sign_update` (from Sparkle's bin/).
+            The enclosure URL points to the zip asset uploaded to GitHub
+            Releases. Sparkle downloads, verifies the signature, extracts,
+            replaces UVieMac.app, and relaunches.
+        -->
+        <item>
+        <title>Version 2.0.3</title>
+        <sparkle:version>1791381613</sparkle:version>
+        <sparkle:shortVersionString>2.0.3</sparkle:shortVersionString>
+        <pubDate>Wed, 07 Oct 2026 14:01:23 +0000</pubDate>
+        <description><![CDATA[
+            <h3>UVie for Mac 2.0.3</h3>
+            <ul><li>ci: embed release notes in the Sparkle appcast</li></ul>
+            <p><a href="https://github.com/uvie-project/uvie-mac/releases/tag/v2.0.3">Xem chi tiết trên GitHub</a></p>
+        ]]></description>
+        <enclosure url="https://github.com/uvie-project/uvie-mac/releases/download/v2.0.3/UVieMac-2.0.3-universal.zip" length="3174079" type="application/octet-stream" sparkle:edSignature="lzDyP8ufbwU1QykhePWPevexUbL+b7XeKzvBgKCE1HIWX6Hm3UTNwqeNdVOV1zJHu989oBCTORlqWS9zupkuCw==" />
+        <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+    </item>
+    </channel>
+</rss>
