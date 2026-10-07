@@ -243,6 +243,26 @@ jobs:
           EOF
           fi
 
+          # Embedded release notes. Sparkle renders the update dialog's notes
+          # pane from <description> (inline) or <sparkle:releaseNotesLink>
+          # (external). With NEITHER the notes view never receives content, so
+          # its spinner runs forever — the update still installs, but the
+          # dialog looks broken ("loading never stops, no content").
+          # Embed the commit subjects since the previous tag so the pane
+          # renders instantly with zero network fetch.
+          # Do NOT also emit a <sparkle:releaseNotesLink>: Sparkle prefers the
+          # link over the inline description and would then load the full
+          # GitHub release page (a heavy SPA) inside the dialog.
+          PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          if [ -n "$PREV_TAG" ]; then RANGE="${PREV_TAG}..${TAG}"; else RANGE="${TAG}"; fi
+          NOTES=$( { git log --no-merges --pretty=format:'%s' "$RANGE" 2>/dev/null \
+                     || git log --no-merges -20 --pretty=format:'%s'; } \
+                   | grep -v '^chore: bump version' \
+                   | head -40 \
+                   | python3 -c 'import sys, html; lines=[l.strip() for l in sys.stdin if l.strip()]; print("<ul>" + "".join(f"<li>{html.escape(l)}</li>" for l in lines) + "</ul>")' )
+          if [ -z "$NOTES" ] || [ "$NOTES" = "<ul></ul>" ]; then NOTES="<p>Cập nhật ${VERSION}.</p>"; fi
+          RELEASE_PAGE="https://github.com/uvie-project/uvie-mac/releases/tag/${TAG}"
+
           # Build the new <item> block (indented to match template style).
           # sparkle:version MUST match the app's CFBundleVersion (set in
           # step 3) so Sparkle doesn't false-positive on same-version checks.
@@ -253,6 +273,11 @@ jobs:
                   <sparkle:version>${BUILD_NUM}</sparkle:version>
                   <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
                   <pubDate>${PUB_DATE}</pubDate>
+                  <description><![CDATA[
+                      <h3>UVie for Mac ${VERSION}</h3>
+                      ${NOTES}
+                      <p><a href="${RELEASE_PAGE}">Xem chi tiết trên GitHub</a></p>
+                  ]]></description>
                   <enclosure url="${ZIP_URL}" length="${ZIP_SIZE}" type="application/octet-stream" sparkle:edSignature="${ED_SIG}" />
                   <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
               </item>
