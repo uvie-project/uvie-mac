@@ -293,11 +293,16 @@ jobs:
           cp "$APPCAST" appcast.xml
           echo "APPCAST_NAME=appcast.xml" >> "$GITHUB_ENV"
 
-      # ── 10. Draft Release ────────────────────────────────────────────────
-      - name: Create Draft Release
+      # ── 10. Create the GitHub release ────────────────────────────────────
+      # A tag push PUBLISHES immediately. Step 11 points the appcast at this
+      # release's zip, so leaving it as a draft would have the update feed
+      # advertise a build that 404s for every user until someone published it
+      # by hand. Manual runs keep the `draft` input (default true) so a
+      # maintainer can still do a dry run without touching the live feed.
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          draft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || true }}
+          draft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft }}
           generate_release_notes: true
           files: |
             ${{ env.DMG_NAME }}

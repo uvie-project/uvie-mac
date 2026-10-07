@@ -39,6 +39,35 @@ xcrun llvm-cov report .build/debug/UVieMacPackageTests.xctest/Contents/MacOS/UVi
 > `cargo build --release --target aarch64-apple-darwin` (and `x86_64-apple-darwin`)
 > in `../uvie-rs`, then `lipo -create` both `libuvie.a` into `Frameworks/`.
 
+## Release
+
+1. Bump `CFBundleShortVersionString` in `Info.plist` — and *only* that key.
+   Leave `CFBundleVersion` alone: CI overwrites it with a Unix timestamp so
+   Sparkle always sees a strictly newer build. Commit as
+   `chore: bump version to vX.Y.Z`.
+2. `git push origin main && git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+`.github/workflows/release.yml` (triggered by the tag) then builds arm64 +
+x86_64, lipos, signs, **notarizes**, packages the DMG + the Sparkle zip,
+generates the appcast entry, **publishes the GitHub release**, and force-pushes
+`appcast.xml` to an orphan `gh-pages` branch that GitHub Pages serves at
+`https://uvie-project.github.io/uvie-mac/appcast.xml` (`SUFeedURL`).
+
+- Tag pushes publish immediately. `workflow_dispatch` keeps the `draft` input
+  (default true) for a dry run — a draft release would leave the live feed
+  advertising a zip that 404s for every user.
+- The appcast entry carries **embedded release notes** (`<description>`, built
+  from the commit subjects since the previous tag). Do NOT also emit a
+  `<sparkle:releaseNotesLink>`: Sparkle prefers the link and would load the
+  whole GitHub release page (a heavy SPA) inside the update dialog. With
+  neither, the dialog's release-notes pane spins forever ("loading never
+  stops, no content") even though the update still installs.
+- `gh-pages` is a single-file orphan branch force-pushed each release, so the
+  feed only ever holds the newest `<item>`.
+- Re-running a failed job is safe (fresh checkout per run). Transient
+  `uploads.github.com` connect timeouts have been seen at the asset-upload
+  step — just re-run the job.
+
 ## Test Architecture
 
 Tests simulate user keystrokes WITHOUT touching the host session:
