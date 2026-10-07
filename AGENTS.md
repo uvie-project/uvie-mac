@@ -105,6 +105,26 @@ the `AppContextDetecting` stub at every call site).
   comes from `AppContextDetector` (NSWorkspace notifications) plus a
   budgeted AX refresh (`axRefreshAttempts`, 3 per trigger) for apps that
   never fire activation notifications (Spotlight).
+  - **Bypass list is user-extendable** (`DefaultsKey.customBypassApps`,
+    Settings → Ứng dụng → "Bypass Apps"): system UI + iOS Simulator ship as
+    defaults, and users add apps that ignore synthetic CGEvents (VMs,
+    Android emulator, remote-desktop clients, raw-input games). `shouldBypass`
+    reads `cachedBypassApps`, so the list is hot-path free.
+- **Non-ASCII keys are never swallowed** (`handleCharacterKey`): the engine
+  only processes ASCII, so an accented/Cyrillic/Greek/combining key used to
+  return an empty diff and get consumed — the app looked dead ("events are
+  logged but nothing types"). Such keys now commit the composing word, reset
+  the engine and **pass through** so the app inserts them natively. A second
+  guard after `feed` does the same for any empty-diff/no-composing result
+  (mirrors `AXTextInjector.feed`'s "engine didn't process it" check).
+- **Keyboard-layout classification** (`KeyboardLayoutMonitor`) prefers the
+  input source's `kTISPropertyInputSourceLanguages` (authoritative) over
+  keyword matching on the source ID, and `isLatinSourceID` gained the
+  scripts whose IDs carried no keyword (Kazakh, Mongolian, Nepali, Sinhala,
+  Tamil, Persian, Pashto, Belarusian, Serbian, Burmese, Khmer, …). A layout
+  misclassified as Latin stayed enabled while every key was non-ASCII —
+  the trigger for the swallowing bug above. Latin variants of dual-script
+  layouts ("Serbian-Latin") are checked first and stay Latin.
 - Settings flags read on the hot path are cached in `EventTap` /
   `MacroManager` / `Logger` and refreshed via
   `UserDefaults.didChangeNotification`. External `defaults write` needs an

@@ -179,6 +179,58 @@ final class HelperTests: XCTestCase {
         XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Ukrainian"))
     }
 
+    func test_layoutClassification_previouslyMisclassifiedNonLatinSources() {
+        // These IDs carry no script keyword the old list knew, so they were
+        // classified Latin — leaving the engine enabled on a layout whose keys
+        // are all non-ASCII. Every keystroke then produced no engine output.
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Kazakh"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Mongolian"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Nepali"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Sinhala"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Tamil"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Persian"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Pashto"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Belarusian"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Serbian"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Burmese"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Khmer"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Tibetan"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Telugu"))
+    }
+
+    func test_layoutClassification_latinVariantOfDualScriptStaysLatin() {
+        // "Serbian-Latin" contains the non-Latin keyword "Serbian" — the
+        // "-Latin" variant check must win, otherwise UVie auto-disables on a
+        // perfectly Latin layout.
+        XCTAssertTrue(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Serbian-Latin"))
+        // Dual-script layouts that default to Latin must not be caught by a
+        // broad keyword ("Azeri"/"Uzbek" are Latin in modern usage).
+        XCTAssertTrue(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Azeri"))
+        XCTAssertTrue(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Uzbek"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinSourceID("com.apple.keylayout.Uzbek-Cyrillic"))
+    }
+
+    func test_layoutLanguageClassification() {
+        // Latin-script languages (and Latin script subtags) stay enabled.
+        XCTAssertTrue(KeyboardLayoutMonitor.isLatinLanguage("en"))
+        XCTAssertTrue(KeyboardLayoutMonitor.isLatinLanguage("fr"))
+        XCTAssertTrue(KeyboardLayoutMonitor.isLatinLanguage("vi"))
+        XCTAssertTrue(KeyboardLayoutMonitor.isLatinLanguage("de-DE"))
+        XCTAssertTrue(KeyboardLayoutMonitor.isLatinLanguage("sr-Latn"))
+        // Non-Latin scripts auto-disable the engine.
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinLanguage("ru"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinLanguage("uk"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinLanguage("el"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinLanguage("ar"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinLanguage("he"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinLanguage("th"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinLanguage("hi"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinLanguage("zh-Hans"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinLanguage("ja"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinLanguage("ko"))
+        XCTAssertFalse(KeyboardLayoutMonitor.isLatinLanguage("sr-Cyrl"))
+    }
+
     // MARK: - AXTextInjector text composition
 
     func test_axComposeText_appendAndReplace() {

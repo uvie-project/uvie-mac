@@ -7,6 +7,7 @@ struct AppsPane: View {
     @State private var excludedApps: [AppEntry] = []
     @State private var compoundApps: [AppEntry] = []
     @State private var chromiumApps: [AppEntry] = []
+    @State private var bypassApps: [AppEntry] = []
     @State private var showingAppPicker = false
     @State private var pickerMode: PickerMode = .excluded
     @State private var availableApps: [RunningApp] = []
@@ -18,10 +19,13 @@ struct AppsPane: View {
 
     private let defaultChromiumApps: [String] = Array(AppDefaults.chromiumBrowsers).sorted()
 
+    private let defaultBypassApps: [String] = Array(AppDefaults.bypassApps).sorted()
+
     enum PickerMode {
         case excluded
         case compound
         case chromium
+        case bypass
     }
 
     struct AppEntry: Identifiable {
@@ -220,6 +224,69 @@ struct AppsPane: View {
                     .padding(.vertical, 12)
                 }
             }
+
+            PaneSection("Bypass Apps") {
+                SettingsCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Ứng dụng không nhận sự kiện giả lập")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+
+                        Text("Thêm ứng dụng vào đây nếu bạn KHÔNG GÕ ĐƯỢC gì trong đó (máy ảo, trình giả lập, điều khiển từ xa, game). UVie sẽ để phím đi thẳng thay vì chặn rồi gửi lại — các ứng dụng này bỏ qua sự kiện gửi lại nên phím bị nuốt mất.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+
+                        Divider()
+
+                        if bypassApps.isEmpty {
+                            Text("Chưa có ứng dụng nào")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.tertiary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.vertical, 20)
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(Array(bypassApps.enumerated()), id: \.element.id) { idx, entry in
+                                    AppRow(bundleID: entry.bundleID, icon: entry.icon) {
+                                        removeBypassApp(at: idx)
+                                    }
+                                    if idx < bypassApps.count - 1 {
+                                        Divider()
+                                    }
+                                }
+                            }
+                        }
+
+                        Divider()
+
+                        HStack {
+                            Button {
+                                pickerMode = .bypass
+                                showingAppPicker = true
+                            } label: {
+                                Label("Thêm ứng dụng", systemImage: "plus")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.blue)
+
+                            Spacer()
+
+                            Button {
+                                resetBypassToDefaults()
+                            } label: {
+                                Text("Reset mặc định")
+                                    .font(.system(size: 11))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 4)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                }
+            }
         }
         .sheet(isPresented: $showingAppPicker) {
             AppPickerSheet(availableApps: availableApps) { selectedBundleID in
@@ -230,6 +297,8 @@ struct AppsPane: View {
                     addCompoundApp(selectedBundleID)
                 case .chromium:
                     addChromiumApp(selectedBundleID)
+                case .bypass:
+                    addBypassApp(selectedBundleID)
                 }
             }
         }
@@ -242,6 +311,7 @@ struct AppsPane: View {
             loadExcludedApps()
             loadCompoundApps()
             loadChromiumApps()
+            loadBypassApps()
         }
     }
 
@@ -344,6 +414,39 @@ struct AppsPane: View {
         saveChromiumApps()
     }
 
+    // MARK: - Bypass Apps
+
+    private func loadBypassApps() {
+        let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customBypassApps) ?? []
+        let allBundleIDs = defaultBypassApps + custom
+        bypassApps = allBundleIDs.map { bundleID in
+            AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
+        }
+    }
+
+    private func saveBypassApps() {
+        let custom = bypassApps.map { $0.bundleID }.filter { !defaultBypassApps.contains($0) }
+        UserDefaults.standard.set(custom, forKey: DefaultsKey.customBypassApps)
+    }
+
+    private func addBypassApp(_ bundleID: String) {
+        bypassApps.append(AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID)))
+        saveBypassApps()
+    }
+
+    private func removeBypassApp(at index: Int) {
+        guard index < bypassApps.count else { return }
+        bypassApps.remove(at: index)
+        saveBypassApps()
+    }
+
+    private func resetBypassToDefaults() {
+        bypassApps = defaultBypassApps.map { bundleID in
+            AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
+        }
+        saveBypassApps()
+    }
+
     private func loadAvailableApps() {
         let runningApps = NSWorkspace.shared.runningApplications
         let currentList: [AppEntry]
@@ -354,6 +457,8 @@ struct AppsPane: View {
             currentList = compoundApps
         case .chromium:
             currentList = chromiumApps
+        case .bypass:
+            currentList = bypassApps
         }
 
         let currentBundleIDs = Set(currentList.map { $0.bundleID })

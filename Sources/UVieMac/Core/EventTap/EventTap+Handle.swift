@@ -513,14 +513,45 @@ extension EventTap {
     // MARK: - Regular character handler
 
     private func handleCharacterKey(type: CGEventType, keyCode: Int64, app: String, event: CGEvent) -> Unmanaged<CGEvent>? {
+        // Single translation per event — the character decides every branch
+        // below (function key / non-ASCII / text), so resolve it once.
+        let glyph = characterFromCGEvent(event)
+
         // Function keys and other non-printing keys translate to private-use
         // unicode (0xF700–0xF8FF). They are not text: feeding them to the
         // engine consumes the event and swallows app/system shortcuts
         // (F5 refresh, media keys) — pass them through untouched.
-        if let glyph = characterFromCGEvent(event),
-           let scalar = glyph.unicodeScalars.first,
+        if let scalar = glyph?.unicodeScalars.first,
            (0xF700...0xF8FF).contains(scalar.value) {
             perfEnd("char-fnkey", keyCode: keyCode, app: app)
+            return Unmanaged.passRetained(event)
+        }
+
+        // The engine only understands ASCII keystrokes. A non-ASCII character
+        // (an accented letter on a Latin layout, a Cyrillic/Greek/Arabic key,
+        // a combining sequence) is a word boundary it cannot render: feeding
+        // it produces no output, and consuming the event would post nothing —
+        // silently swallowing the keystroke while the trace log still showed
+        // it arriving ("events are logged but nothing types"). Pass it through
+        // so the app inserts it natively. Decided BEFORE the keyUp suppression
+        // below, so a passed-through keyDown keeps its keyUp too. Mirrors the
+        // AX path's "engine didn't process it" guard.
+        if let glyph, glyph.asciiValue == nil {
+            if type == .keyUp {
+                perfEnd("char-nonascii-keyup", keyCode: keyCode, app: app)
+                return Unmanaged.passRetained(event)
+            }
+            // The composing word stays on screen; drop the engine state and
+            // the committed-word history (the caret geometry changes once the
+            // app inserts the character).
+            if _engine.isComposing {
+                commitAndInject()
+            }
+            _engine.reset()
+            editCaretBack = 0
+            invalidateWebContentCache()
+            updateSentenceStartState(after: glyph)
+            perfEnd("char-nonascii", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
         }
 
@@ -529,7 +560,7 @@ extension EventTap {
             return nil  // Suppress original keyUp; we already sent synthetic
         }
 
-        guard let firstChar = characterFromCGEvent(event) else {
+        guard let firstChar = glyph else {
             perfEnd("char-pass", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
         }
@@ -602,6 +633,15 @@ extension EventTap {
 
         // Update sentence start state based on what was typed
         updateSentenceStartState(after: firstChar)
+
+        // Defense in depth: an empty diff with no composing state means there
+        // is nothing to inject — consuming the key here would silently swallow
+        // it (the exact failure the non-ASCII guard above prevents). Let the
+        // app handle the key natively instead. Mirrors `AXTextInjector.feed`.
+        if bs == 0 && out.isEmpty && !_engine.isComposing {
+            perfEnd("char-unhandled", keyCode: keyCode, app: app)
+            return Unmanaged.passRetained(event)
+        }
 
         // CGEvent path: selection-based for compound apps (no flicker),
         // plain backspace for regular apps.

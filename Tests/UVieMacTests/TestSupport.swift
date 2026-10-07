@@ -139,6 +139,9 @@ func makeEventTap(vietnamese: Bool = true) -> EventTap {
     tap.cachedExcludedApps = []
     tap.cachedCompoundApps = []
     tap.cachedChromiumApps = []
+    // Bypass apps are code-defined defaults (system UI + Simulator), not
+    // user settings — seed the real set so production behavior is preserved.
+    tap.cachedBypassApps = defaultBypassApps
     return tap
 }
 

@@ -17,7 +17,17 @@ func getCompoundApps() -> Set<String> {
 let axApps: Set<String> = AppDefaults.axApps
 
 /// Apps that should bypass IME entirely (system UI, lock screen, etc.)
-let bypassApps: Set<String> = AppDefaults.bypassApps
+/// plus any app the user added because it ignores synthetic events (VMs,
+/// emulators, remote-desktop clients, raw-input games): for those the engine
+/// would consume the real key and post a replacement the app never acts on,
+/// leaving the user unable to type at all.
+let defaultBypassApps: Set<String> = AppDefaults.bypassApps
+
+/// Get bypass apps from UserDefaults (defaults + custom)
+func getBypassApps() -> Set<String> {
+    let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customBypassApps) ?? []
+    return defaultBypassApps.union(Set(custom))
+}
 
 /// Apps the user explicitly wants to exclude from UVieMac processing.
 /// Events for these apps pass through untouched.

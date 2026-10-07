@@ -170,6 +170,10 @@ final class EventTap: ObservableObject {
     var cachedExcludedApps: Set<String> = []
     var cachedCompoundApps: Set<String> = []
     var cachedChromiumApps: Set<String> = []
+    /// Apps that bypass the IME entirely (system UI + user-added apps that
+    /// ignore synthetic events). Cached for the same reason as the sets
+    /// above — `shouldBypass` runs on every event.
+    var cachedBypassApps: Set<String> = []
     /// Tracks whether the CGEventTap is currently disabled for an excluded app.
     /// Prevents redundant `CGEvent.tapEnable` calls on every app switch.
     var lastExcludedState = false
@@ -429,6 +433,7 @@ final class EventTap: ObservableObject {
         cachedExcludedApps = getExcludedApps()
         cachedCompoundApps = getCompoundApps()
         cachedChromiumApps = getChromiumBrowsers()
+        cachedBypassApps = getBypassApps()
     }
 
     /// Observe runtime setting changes so toggling Quick Telex, Modern
@@ -664,6 +669,6 @@ final class EventTap: ObservableObject {
     }
 
     var shouldBypass: Bool {
-        bypassApps.contains(appDetector.bundleID)
+        cachedBypassApps.contains(appDetector.bundleID)
     }
 }

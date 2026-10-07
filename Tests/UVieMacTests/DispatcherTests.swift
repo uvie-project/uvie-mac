@@ -61,6 +61,67 @@ final class DispatcherTests: XCTestCase {
         XCTAssertEqual(sink.calls, [.text("A")])
     }
 
+    // MARK: - Non-ASCII keys (regression: keys must never be swallowed)
+
+    /// The engine only understands ASCII. A non-ASCII character (Cyrillic,
+    /// Greek, an accented letter from a Latin layout) produced no engine
+    /// output, but the old code consumed the event and posted nothing — the
+    /// app looked dead ("events are logged but nothing types"). It must pass
+    /// through so the app inserts the character natively.
+    func test_nonAsciiKey_passesThroughInsteadOfBeingSwallowed() {
+        let result = send(tap, .keyDown, keyDownEvent(0, unicode: "ф"))
+        assertPassed(result)
+        XCTAssertTrue(sink.calls.isEmpty, "nothing must be injected for an unhandled key")
+        // The passed-through keyDown must keep its keyUp — suppressing it
+        // would leave the app with an unbalanced key cycle.
+        assertPassed(send(tap, .keyUp, keyUpEvent(0, unicode: "ф")))
+        XCTAssertTrue(sink.calls.isEmpty)
+    }
+
+    func test_nonAsciiKey_whileComposing_commitsWordAndPassesThrough() {
+        for ch in "cha" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+        }
+        XCTAssertTrue(tap._engine.isComposing)
+        sink.reset()
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(0, unicode: "é")))
+        // The composing word stays on screen; the accented key is the app's job.
+        XCTAssertFalse(tap._engine.isComposing)
+        XCTAssertEqual(tap.editCaretBack, 0)
+        XCTAssertTrue(sink.calls.allSatisfy { $0 == .text("") },
+                      "no backspaces / no replacement text for the unhandled key")
+    }
+
+    func test_nonAsciiKey_uppercaseAccented_isAlsoPassedThrough() {
+        assertPassed(send(tap, .keyDown, keyDownEvent(0, flags: .maskShift, unicode: "Ä")))
+        XCTAssertTrue(sink.calls.isEmpty)
+    }
+
+    // MARK: - Bypass apps (apps that ignore synthetic events)
+
+    /// Apps in the bypass list never see a consumed key: the real event is
+    /// passed through untouched, because consuming it and posting a synthetic
+    /// replacement is exactly what fails in VMs / emulators / remote-desktop
+    /// clients (see the iOS Simulator note in AppDefaults).
+    func test_bypassApp_passesEverythingThrough() {
+        tap.cachedBypassApps = ["com.test.vm"]
+        detector.bundleID = "com.test.vm"
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(0, unicode: "a")))
+        assertPassed(send(tap, .keyDown, keyDownEvent(49)))
+        assertPassed(send(tap, .keyDown, keyDownEvent(51)))
+        XCTAssertTrue(sink.calls.isEmpty)
+    }
+
+    func test_nonBypassApp_isStillProcessed() {
+        tap.cachedBypassApps = ["com.test.vm"]
+        detector.bundleID = "com.test.editor"
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: "a")))
+        XCTAssertEqual(sink.calls, [.text("a")])
+    }
+
     // MARK: - Backspace
 
     func test_backspaceWhileComposing_isConsumedAndApplied() {
