@@ -283,6 +283,19 @@ final class DispatcherTests: XCTestCase {
         XCTAssertFalse(tap._engine.isComposing)
     }
 
+    func test_escapeRestoresWholeWordAfterSyllableSplit() {
+        // "master" renders "mátẻ" — the split commits "má" and only "ter"
+        // stays composing. Escape must restore the WHOLE word ("master"),
+        // not just the composing tail (which used to post "ter").
+        for ch in "master" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))), "char \(ch)")
+        }
+        sink.reset()
+        assertConsumed(send(tap, .keyDown, keyDownEvent(53)))
+        XCTAssertEqual(sink.calls, [.backspaces(4), .text("master")])
+        XCTAssertFalse(tap._engine.isComposing)
+    }
+
     func test_escapePassesThroughWhenRenderMatchesRaw() {
         // "abc" renders literally — nothing to restore, so Escape keeps its
         // normal role (dismiss dialogs etc.) and passes through.

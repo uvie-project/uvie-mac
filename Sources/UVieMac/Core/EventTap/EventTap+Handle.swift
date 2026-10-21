@@ -467,11 +467,14 @@ extension EventTap {
             // composition, and consume the key. When the render already
             // equals the raw input there is nothing to restore, so the
             // normal cancel applies and Escape reaches the app.
+            // An empty raw means the word outgrew the engine's raw buffer
+            // (its prefix was committed mid-word) — restoring would delete
+            // text the raw no longer covers, so cancel instead.
             if keyCode == 53 {
                 if _engine.isComposing {
                     let out = _engine.currentOutput()
                     let raw = _engine.rawChars()
-                    if raw != out {
+                    if !raw.isEmpty, raw != out {
                         let bs = out.count
                         if isCompoundApp {
                             outputSink.applyCompoundBackspaces(bs: bs, out: raw)

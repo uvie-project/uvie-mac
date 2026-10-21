@@ -95,6 +95,26 @@ final class EngineStateTests: XCTestCase {
         XCTAssertTrue(engine.isComposing)
     }
 
+    func test_rawCharsCoversWholeWordAcrossSyllableSplit() {
+        // "master" renders "mátẻ": the V-C-V split commits "má" and leaves
+        // only "ter" composing. The raw keystrokes must still describe the
+        // WHOLE word — that is what Escape restores.
+        let engine = EngineBridge()
+        for ch in "master" { _ = engine.feed(char: ch) }
+        XCTAssertEqual(engine.committedText(), "má")
+        XCTAssertEqual(engine.currentOutput(), "mátẻ")
+        XCTAssertEqual(engine.rawChars(), "master")
+    }
+
+    func test_rawCharsCoversWholeWordAcrossDictionaryCommit() {
+        // The dictionary override commits "mass" and passes the rest of the
+        // word through raw; the raw keystrokes stay complete for Escape.
+        let engine = EngineBridge()
+        for ch in "masster" { _ = engine.feed(char: ch) }
+        XCTAssertEqual(engine.currentOutput(), "master")
+        XCTAssertEqual(engine.rawChars(), "masster")
+    }
+
     func test_editAt_declinesWhenNothingCommitted() {
         let engine = EngineBridge()
         // No committed words yet — any caretBack must decline.

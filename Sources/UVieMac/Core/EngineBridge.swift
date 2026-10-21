@@ -58,8 +58,8 @@ func uvie_engine_raw_chars(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePoi
 final class EngineBridge {
     private var engine: OpaquePointer?
 
-    /// Output buffer capacity for FFI calls (engine output is a single
-    /// syllable, well under 128 bytes).
+    /// Output buffer capacity for FFI calls (engine output is at most one
+    /// word — 24 raw keystrokes, ≤ 96 bytes even when fully accented).
     private static let bufferCapacity = 128
     /// Reusable output buffer for FFI calls. The engine is only touched from
     /// the event-tap callback (main runloop — see `EventTap.startTap`), so a
@@ -189,6 +189,9 @@ final class EngineBridge {
         return String(cString: scratch)
     }
 
+    /// Raw keystrokes of the whole current word (across V-C-V splits, tone
+    /// cancels and dictionary commits). Empty when the word outgrew the
+    /// engine's raw buffer — the caller must not restore it then.
     func rawChars() -> String {
         guard let engine else { return "" }
         _ = uvie_engine_raw_chars(engine, &scratch, Self.bufferCapacity)

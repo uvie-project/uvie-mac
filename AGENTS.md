@@ -260,9 +260,16 @@ step past the newer words' ends) and type. Implemented by:
 Escape while the engine is composing restores the raw keystrokes of the
 current word: the rendered form is erased (compound-aware backspaces)
 and the literal raw chars are posted — `"viêt"` + Esc → `"vieet"`.
+`rawChars()` (`uvie_engine_raw_chars`) returns the WHOLE word's
+keystrokes, not just the composing syllable: `"master"` renders `"mátẻ"`
+(V-C-V split committed `"má"`, only `"ter"` composes) and Esc restores
+`"master"` — posting the composing tail alone produced `"ter"`.
 Consumed only when `rawChars() != currentOutput()`; when the render
 already equals the raw input, or the engine is idle, Escape passes
-through normally so the app still receives it.
+through normally so the app still receives it. An EMPTY `rawChars()` means
+the word outgrew the engine's 24-keystroke raw buffer (its prefix was
+committed mid-word): restoring would delete text the raw no longer
+covers, so Escape cancels instead.
 
 ## Notes
 
