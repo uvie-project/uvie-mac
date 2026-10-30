@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>UVieMac Changelog</title>
+        <description>Most recent changes with links to updates.</description>
+        <language>vi</language>
+        <!--
+            This appcast is updated automatically by the CI release workflow.
+            Each release adds a new <item> with the EdDSA signature generated
+            by `sign_update` (from Sparkle's bin/).
+            The enclosure URL points to the zip asset uploaded to GitHub
+            Releases. Sparkle downloads, verifies the signature, extracts,
+            replaces UVieMac.app, and relaunches.
+        -->
+        <item>
+        <title>Version 2.0.7</title>
+        <sparkle:version>1793355571</sparkle:version>
+        <sparkle:shortVersionString>2.0.7</sparkle:shortVersionString>
+        <pubDate>Fri, 30 Oct 2026 10:21:09 +0000</pubDate>
+        <description><![CDATA[
+            <h3>UVie for Mac 2.0.7</h3>
+            <ul><li>fix: spotlight on macOS 26 (campo) and ax dup</li><li>fix: spotlight duplication when the field has stale text</li><li>fix: drop composing word on silent app switch</li><li>fix: typing desync, dead backspace, spotlight</li></ul>
+            <p><a href="https://github.com/uvie-project/uvie-mac/releases/tag/v2.0.7">Xem chi tiết trên GitHub</a></p>
+        ]]></description>
+        <enclosure url="https://github.com/uvie-project/uvie-mac/releases/download/v2.0.7/UVieMac-2.0.7-universal.zip" length="3208455" type="application/octet-stream" sparkle:edSignature="82K20hL7Mktn+uoqpLzWTm03kx1+ZUhBn21Msfv2ppe3dGU4PtGFS3eAW34YFbNbIbDWj4FEYiqxDeZqqWL9Dg==" />
+        <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+    </item>
+    </channel>
+</rss>
