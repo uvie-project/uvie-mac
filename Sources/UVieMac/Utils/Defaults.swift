@@ -20,6 +20,12 @@ enum DefaultsKey {
     static let customChromiumApps = "CustomChromiumApps"
     static let customExcludedApps = "CustomExcludedApps"
     static let customBypassApps = "CustomBypassApps"
+    /// Bundle IDs the user removed from the built-in default lists. Stored
+    /// separately because the custom lists only hold user additions; writing
+    /// them alone silently restored every default app on the next launch.
+    static let removedCompoundApps = "RemovedCompoundApps"
+    static let removedChromiumApps = "RemovedChromiumApps"
+    static let removedBypassApps = "RemovedBypassApps"
     static let customToggleEnabled = "CustomToggleEnabled"
     static let customToggleKeyCode = "CustomToggleKeyCode"
     static let customToggleModifiers = "CustomToggleModifiers"

@@ -2,6 +2,17 @@ import SwiftUI
 import AppKit
 import Carbon
 
+/// True while a `ShortcutRecorder` is capturing a shortcut.
+///
+/// The event tap reads it so that recording a NEW modifier-only chord does not
+/// fire the EXISTING chord binding when the user releases the keys to preview
+/// them (the tap sees the flagsChanged events the recorder window never gets).
+/// Main thread only: the recorder and the tap callback both run on the main
+/// runloop.
+enum ShortcutRecordingState {
+    static var isRecording = false
+}
+
 /// A button that captures the next key combination as a `HotkeyBinding`.
 /// Click to enter recording mode, press a shortcut, and the binding is saved
 /// via `GlobalHotkeyManager`.
@@ -112,6 +123,7 @@ struct ShortcutRecorder: View {
     private func startRecording() {
         guard monitor == nil else { return }
         isRecording = true
+        ShortcutRecordingState.isRecording = true
         currentModifiers = []
         lastHeldModifiers = []
 
@@ -166,6 +178,7 @@ struct ShortcutRecorder: View {
             monitor = nil
         }
         isRecording = false
+        ShortcutRecordingState.isRecording = false
         currentModifiers = []
         lastHeldModifiers = []
     }

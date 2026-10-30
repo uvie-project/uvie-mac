@@ -21,9 +21,12 @@ final class EventTap: ObservableObject {
     var appDetector: AppContextDetecting
     var axInjector: AXTextInjecting
     /// Synthetic-event sink — `self` (real CGEvent posting) in production,
-    /// a recording stub in tests. IUO because it references `self`, which is
-    /// only assignable after all stored properties are initialized.
-    var outputSink: SyntheticOutputSink!
+    /// a recording stub in tests. `unowned` so the reference to `self` does
+    /// not create a retain cycle (a strong one kept `EventTap` alive forever,
+    /// so `deinit` and the observer cleanup in it never ran). IUO because
+    /// it references `self`, which is only assignable after all stored
+    /// properties are initialized.
+    unowned var outputSink: SyntheticOutputSink!
     let macroManager = MacroManager.shared
     let layoutMonitor = KeyboardLayoutMonitor.shared
 
@@ -120,6 +123,11 @@ final class EventTap: ObservableObject {
     /// AX lookups budgeted per armed trigger — see `axRefreshAttempts`.
     static let axRefreshMaxAttempts = 3
 
+    /// Upper bound on the invisible-raw-key drain in `handleBackspace`: the
+    /// engine's raw buffer holds at most one word (24 keystrokes), so this
+    /// can never spin on a stuck engine.
+    static let maxBackspaceDrain = 24
+
     /// Timeout (seconds) applied to AX IPC on the event-tap callback. AX
     /// round-trips are synchronous; without a bound, a hung target app stalls
     /// the callback long enough for the system to disable the tap entirely
@@ -169,6 +177,9 @@ final class EventTap: ObservableObject {
     /// App switch detection: prevent ghost characters from previous app
     var engineResetObserver: NSObjectProtocol?
     var appSwitchObserver: NSObjectProtocol?
+    /// Observer for language changes made outside `triggerToggle` (menu bar,
+    /// popover, Settings, Carbon hotkey). See `observeLanguageSwitch`.
+    var languageSwitchObserver: NSObjectProtocol?
 
     /// Performance logging for keystroke latency (only logs slow / high-event paths).
     /// Backed by `Logger.shared` so concurrent writes are serialized on a
@@ -216,6 +227,7 @@ final class EventTap: ObservableObject {
         observeSettingsChanges()
         observeEngineResetNotification()
         observeAppSwitch()
+        observeLanguageSwitch()
     }
 
     deinit {
@@ -226,6 +238,9 @@ final class EventTap: ObservableObject {
         }
         if let engineResetObserver {
             NotificationCenter.default.removeObserver(engineResetObserver)
+        }
+        if let languageSwitchObserver {
+            NotificationCenter.default.removeObserver(languageSwitchObserver)
         }
         if let appSwitchObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(appSwitchObserver)
@@ -552,6 +567,26 @@ final class EventTap: ObservableObject {
             // Resetting on every app switch causes wrong capitalization
             // when switching back to an app mid-sentence.
             self.updateExcludedTapState()
+        }
+    }
+
+    /// Observe language-mode changes made outside `triggerToggle`: the menu
+    /// bar / popover toggle, the Settings master toggle, and the Carbon global
+    /// hotkey all flip `InputMethodManager.isVietnamese` directly. Those paths
+    /// used to leave the composing word live, so the first keystroke in the
+    /// new language applied a diff computed against the old one (ghost text).
+    /// Only the engine/caret state is dropped: sentence-start memory belongs
+    /// to the language, not the composition.
+    private func observeLanguageSwitch() {
+        languageSwitchObserver = NotificationCenter.default.addObserver(
+            forName: .resetEngineForLanguageSwitch,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self._engine.reset()
+            self.editCaretBack = 0
+            self.invalidateWebContentCache()
         }
     }
 

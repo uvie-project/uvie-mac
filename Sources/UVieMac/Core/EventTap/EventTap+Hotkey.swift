@@ -115,7 +115,10 @@ extension EventTap {
         // EVERY unmodified press of the key. KeyCode 0 is valid (the A key) —
         // the non-empty flag mask is what distinguishes a real binding from
         // an unset default (both read back as 0 from UserDefaults).
-        guard customHotkeyEnabled, !customHotkeyFlags.isEmpty
+        // While the Settings recorder is capturing, stay out of the way: the
+        // user is previewing modifiers, not toggling the language.
+        guard customHotkeyEnabled, !customHotkeyFlags.isEmpty,
+              !ShortcutRecordingState.isRecording
         else { return false }
 
         if customHotkeyKeyCode < 0 {

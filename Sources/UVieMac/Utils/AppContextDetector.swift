@@ -20,6 +20,10 @@ protocol AppContextDetecting: AnyObject {
 final class AppContextDetector: AppContextDetecting {
     private var _bundleID: String = ""
     private var cancellables = Set<AnyCancellable>()
+    /// Guards against duplicate Combine subscriptions: `start()` is called
+    /// from `EventTap.start()`, from the accessibility retry path and from the
+    /// launch poll callback, and each call used to add another sink.
+    private var isStarted = false
 
     var bundleID: String {
         // Read from CGEventTap callback (main runloop) and from
@@ -28,6 +32,8 @@ final class AppContextDetector: AppContextDetecting {
     }
 
     func start() {
+        guard !isStarted else { return }
+        isStarted = true
         // Initial value
         update()
 
@@ -54,6 +60,7 @@ final class AppContextDetector: AppContextDetecting {
 
     func stop() {
         cancellables.removeAll()
+        isStarted = false
     }
 
     /// Update on app switch notification. Uses the NSRunningApplication
@@ -90,8 +97,14 @@ final class AppContextDetector: AppContextDetecting {
             kAXFocusedApplicationAttribute as CFString,
             &focusedApp
         )
-        guard result == .success else { return nil }
+        guard result == .success, let focusedApp else { return nil }
 
+        // `AXUIElement` casts are not runtime-checked (`as?` is treated as
+        // always succeeding), so verify the CF type before the forced cast.
+        // A broken AX hierarchy returning a non-AXUIElement would trap on the
+        // event-tap callback (this runs from `refreshBundleID`). Same guard
+        // as `EventTap.computeIsFocusedFieldWebContent`.
+        guard CFGetTypeID(focusedApp) == AXUIElementGetTypeID() else { return nil }
         let app = focusedApp as! AXUIElement
         var pid: pid_t = 0
         AXUIElementGetPid(app, &pid)

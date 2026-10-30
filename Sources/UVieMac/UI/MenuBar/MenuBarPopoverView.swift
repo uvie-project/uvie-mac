@@ -55,39 +55,6 @@ struct MenuBarPopoverView: View {
         .padding(.vertical, 11)
     }
 
-    // MARK: Engine Toggle
-
-    private var isVietnameseMode: Binding<Bool> {
-        Binding(
-            get: { controller.isVietnamese },
-            set: { newValue in
-                if controller.isVietnamese != newValue {
-                    controller.toggle()
-                }
-            }
-        )
-    }
-
-    private var engineToggle: some View {
-        HStack(spacing: 10) {
-            Image(systemName: isVietnameseMode.wrappedValue ? "keyboard.fill" : "keyboard")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(isVietnameseMode.wrappedValue ? Color.accentColor : .secondary)
-                .frame(width: 16)
-            Text(isVietnameseMode.wrappedValue ? "Tiếng Việt" : "English")
-                .font(.system(size: 12))
-            Spacer()
-            Toggle("", isOn: isVietnameseMode)
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .labelsHidden()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .onTapGesture { isVietnameseMode.wrappedValue.toggle() }
-    }
-
     // MARK: Language Toggle
 
     private var languageToggle: some View {

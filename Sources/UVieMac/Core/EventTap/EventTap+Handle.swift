@@ -149,11 +149,18 @@ extension EventTap {
         // the remaining attempts must keep retrying until the lookup returns
         // a DIFFERENT app — only then is the detection consumed. The AX call
         // is ~1-5ms, so the cost stays bounded at N lookups per trigger.
+        //
+        // Compound/chromium apps are deliberately NOT skipped: Spotlight is
+        // most often opened from a browser or an editor (Cmd+Space while
+        // Safari/Chrome/Notes/TextEdit/Mail is focused). Skipping the refresh
+        // for those apps meant Spotlight was never detected: the keystrokes
+        // kept routing through the CGEvent path, which Spotlight ignores
+        // (the reason AX mode exists), so typing there was lost. Only apps
+        // that cannot hide another focus target are skipped: excluded apps
+        // (the tap is disabled) and AX apps (already resolved).
         if type == .keyDown,
            axRefreshAttempts > 0,
            !cachedExcludedApps.contains(app),
-           !cachedCompoundApps.contains(app),
-           !cachedChromiumApps.contains(app),
            !axApps.contains(app) {
             appDetector.refreshBundleID()
             let fresh = appDetector.bundleID
@@ -256,6 +263,27 @@ extension EventTap {
             invalidateWebContentCache()
         }
 
+        // Text the engine never saw desyncs the composing word: the next diff
+        // backspaces into it and eats it. Paste/cut/undo (Cmd/Ctrl+V/X/Z)
+        // insert or remove text behind the engine's back, and an Option
+        // combination that types a glyph (a dead key: Option+E → ´) does the
+        // same. Observed: "vie" + Cmd+V + "ts" deleted two pasted characters;
+        // "vie" + Option+E + "ts" deleted the ´. Drop the composition state
+        // before those keys reach the app: the rendered word stays on screen
+        // and simply stops being editable (same as a mouse click).
+        if type == .keyDown && !isOptionBackspace {
+            let isEditCommand = (flags.contains(.maskCommand) || flags.contains(.maskControl))
+                && (keyCode == 9 || keyCode == 7 || keyCode == 6) // V paste, X cut, Z undo
+            let isOptionGlyph = flags.contains(.maskAlternate)
+                && !flags.contains(.maskCommand) && !flags.contains(.maskControl)
+                && isTextGlyph(characterFromCGEvent(event))
+            if isEditCommand || isOptionGlyph {
+                _engine.reset()
+                editCaretBack = 0
+                invalidateWebContentCache()
+            }
+        }
+
         // Modifier combos pass through untouched. The Cmd/Ctrl/Fn keyDowns
         // that arm the AX refresh budget arrive as .flagsChanged (handled
         // above) — Spotlight doesn't fire didActivateApplicationNotification,
@@ -347,12 +375,26 @@ extension EventTap {
             return Unmanaged.passRetained(event)
         }
 
-        let (bs, out) = _engine.backspace()
+        var (bs, out) = _engine.backspace()
+        // A trailing raw key that renders nothing (a key the engine kept in
+        // its raw buffer, e.g. "aow" → screen "ao", "ddf" → "đ") makes the
+        // pop report an empty diff. Consuming the Backspace then deletes
+        // nothing on screen, so the key looks dead and the user has to press it
+        // twice. Keep popping invisible raw keys until the diff touches the
+        // screen (or the word is gone); the effective diff is what gets
+        // injected below.
+        if bs == 0 && out.isEmpty && _engine.isComposing {
+            for _ in 0..<EventTap.maxBackspaceDrain {
+                (bs, out) = _engine.backspace()
+                if bs > 0 || !out.isEmpty || !_engine.isComposing { break }
+            }
+        }
         if Logger.shared.keystrokeTraceEnabled {
             Logger.shared.keystroke("backspace bs=\(bs) out='\(out)' compound=\(isCompoundApp) chromium=\(isChromium)")
         }
         if bs == 0 && out.isEmpty && !_engine.isComposing {
-            // Not composing - let OS handle it. The caret moves 1 char left.
+            // Not composing (or the drain emptied the word) - let OS handle it.
+            // The caret moves 1 char left.
             // At or left of the anchor (editCaretBack >= 0) the deleted char
             // belonged to committed text the engine still remembers, so the
             // history is stale and must be dropped. Right of the anchor
@@ -571,6 +613,14 @@ extension EventTap {
 
     // MARK: - Regular character handler
 
+    /// True for a glyph that types text. Function keys and other
+    /// non-printing keys translate to private-use unicode (0xF700-0xF8FF) and
+    /// are not text; neither is a failed translation (`nil`).
+    private func isTextGlyph(_ glyph: Character?) -> Bool {
+        guard let scalar = glyph?.unicodeScalars.first else { return false }
+        return !(0xF700...0xF8FF).contains(scalar.value)
+    }
+
     private func handleCharacterKey(type: CGEventType, keyCode: Int64, app: String, event: CGEvent) -> Unmanaged<CGEvent>? {
         // Single translation per event — the character decides every branch
         // below (function key / non-ASCII / text), so resolve it once.
@@ -580,8 +630,7 @@ extension EventTap {
         // unicode (0xF700–0xF8FF). They are not text: feeding them to the
         // engine consumes the event and swallows app/system shortcuts
         // (F5 refresh, media keys) — pass them through untouched.
-        if let scalar = glyph?.unicodeScalars.first,
-           (0xF700...0xF8FF).contains(scalar.value) {
+        if let glyph, !isTextGlyph(glyph) {
             perfEnd("char-fnkey", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
         }
@@ -774,17 +823,19 @@ extension EventTap {
     /// through naturally — they don't trigger the autocomplete popup, and
     /// re-posting them could break special key handling.
     private func handleEnglishMode(type: CGEventType, keyCode: Int64, event: CGEvent) -> Unmanaged<CGEvent>? {
-        // Non-character keys pass through naturally.
+        // Non-character keys pass through naturally. Break keys still feed the
+        // sentence-start state machine (Enter starts a new sentence) so
+        // auto-capitalize is correct when the user switches back to
+        // Vietnamese mid-sentence.
         if keyCode == 51 || keyCode == 49 || isBreakKey(keyCode) {
+            if type == .keyDown { updateSentenceStartStateForBreakKey(keyCode) }
             return Unmanaged.passRetained(event)
         }
 
         // Function keys translate to private-use unicode (0xF700–0xF8FF) —
         // not text. Re-posting them as string events would strip the keycode
         // and break app shortcuts, so pass the full key cycle through.
-        if let glyph = characterFromCGEvent(event),
-           let scalar = glyph.unicodeScalars.first,
-           (0xF700...0xF8FF).contains(scalar.value) {
+        if let glyph = characterFromCGEvent(event), !isTextGlyph(glyph) {
             return Unmanaged.passRetained(event)
         }
 
@@ -804,8 +855,16 @@ extension EventTap {
             return Unmanaged.passRetained(event)
         }
 
-        // Re-post the same character as a synthetic event.
-        outputSink.postText(String(firstChar))
+        // Auto-capitalize applies in English mode too: the setting is about
+        // the sentence, not the input method. Running the state machine here
+        // also stops a stale "sentence start" from capitalizing the first
+        // letter typed after switching back to Vietnamese ("hello" in
+        // English then "a" in Vietnamese used to produce "A").
+        let transformedChar = applyAutoCapitalize(to: firstChar)
+        updateSentenceStartState(after: firstChar)
+
+        // Re-post the character as a synthetic event.
+        outputSink.postText(String(transformedChar))
         return nil
     }
 }

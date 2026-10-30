@@ -4,7 +4,7 @@
 
 ```bash
 UVIE_RS_DIR=../uvie-rs ./build.sh && swift run   # Build + run dev instance
-swift test                                        # Run the integration test suite (138 tests)
+swift test                                        # Run the integration test suite (163 tests)
 swift test --filter EngineTypingTests             # Engine typing behavior only
 swift test --filter DispatcherTests               # Event-tap dispatch decisions only
 swift test --filter FeaturesTests                 # Per-app memory, input-method manager, macros
@@ -15,7 +15,7 @@ swift test --filter FeaturesTests                 # Per-app memory, input-method
 
 ```bash
 UVIE_RS_DIR=../uvie-rs ./build.sh && swift run   # Build + run dev instance
-swift test                                        # Run the integration test suite (138 tests)
+swift test                                        # Run the integration test suite (163 tests)
 swift test --filter EngineTypingTests             # Engine typing behavior only
 swift test --filter DispatcherTests               # Event-tap dispatch decisions only
 swift test --enable-code-coverage                 # Coverage: .build/debug/codecov/
@@ -146,12 +146,37 @@ the `AppContextDetecting` stub at every call site).
   `EventTap` and refreshed on settings changes; the focused-app bundleID
   comes from `AppContextDetector` (NSWorkspace notifications) plus a
   budgeted AX refresh (`axRefreshAttempts`, 3 per trigger) for apps that
-  never fire activation notifications (Spotlight).
+  never fire activation notifications (Spotlight). The budget is spent in
+  ANY app that is not excluded and not already an AX app: compound/chromium
+  apps are re-resolved too, because Cmd+Space from Safari/Chrome/Notes/
+  TextEdit/Mail is the common way Spotlight opens, and skipping those apps
+  left the keystrokes on the CGEvent path Spotlight ignores.
   - **Bypass list is user-extendable** (`DefaultsKey.customBypassApps`,
     Settings → Ứng dụng → "Bypass Apps"): system UI + iOS Simulator ship as
     defaults, and users add apps that ignore synthetic CGEvents (VMs,
     Android emulator, remote-desktop clients, raw-input games). `shouldBypass`
     reads `cachedBypassApps`, so the list is hot-path free.
+  - **Removing a default app persists** via `DefaultsKey.removedCompoundApps`
+    / `removedChromiumApps` / `removedBypassApps`: `getXApps()` computes
+    `defaults - removed + custom`. The custom list alone only records
+    additions, so writing it without the removed set brought every default
+    back on the next launch.
+- **Text the engine never saw drops the composition** (`handle`): paste/cut/
+  undo (Cmd/Ctrl+V/X/Z) and Option combinations that type a glyph (dead keys,
+  e.g. Option+E → ´) insert or remove text behind the engine's back. Keeping
+  the composing word alive made the next diff backspace into that text
+  ("vie" + paste + "ts" ate two pasted characters). The engine is reset
+  before those keys pass through.
+- **Language switches reset the engine**: `InputMethodManager.toggle()` /
+  `setVietnamese()` (menu bar, popover, Settings master toggle, Carbon
+  hotkey) post `.resetEngineForLanguageSwitch`; `EventTap` drops the
+  composing word and the caret anchor on it. `triggerToggle()` (Fn tap) does
+  the same reset inline.
+- **English mode keeps the sentence state machine running**
+  (`handleEnglishMode`): auto-capitalize applies there too, and Enter starts
+  a new sentence. Without it `isAtSentenceStart` stayed `true` for the whole
+  English word, so the first Vietnamese letter typed afterwards was
+  capitalized mid-word.
 - **Non-ASCII keys are never swallowed** (`handleCharacterKey`): the engine
   only processes ASCII, so an accented/Cyrillic/Greek/combining key used to
   return an empty diff and get consumed — the app looked dead ("events are
@@ -247,8 +272,9 @@ step past the newer words' ends) and type. Implemented by:
   - Space/Enter while composing: anchor moves to the just-committed word's
     end, `editCaretBack = -1`.
 - Gated by `DefaultsKey.editCommittedWords` (default ON, cached in
-  `editCommittedEnabled`, refreshed on settings changes). Disabled for AX
-  apps (Spotlight) — AX injection rewrites the whole field.
+  `editCommittedEnabled`, refreshed on settings changes; Settings → Bàn phím
+  → "Sửa lại từ đã gõ"). Disabled for AX apps (Spotlight) — AX injection
+  rewrites the whole field.
 - Known limits: the ring assumes
   exactly one boundary char between consecutive commits (drift declines
   safely); mouse/selection/Tab resets recover. Mid-word edits can't

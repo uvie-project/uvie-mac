@@ -5,6 +5,7 @@ import SwiftUI
 struct KeyboardPane: View {
     @AppStorage(DefaultsKey.uppercaseFirstChar) private var uppercaseFirstChar: Bool = false
     @AppStorage(DefaultsKey.relaxedCoda) private var relaxedCoda: Bool = false
+    @AppStorage(DefaultsKey.editCommittedWords) private var editCommittedWords: Bool = true
 
     var body: some View {
         PaneScroll {
@@ -23,6 +24,12 @@ struct KeyboardPane: View {
                                 "Viết hoa chữ cái đầu câu",
                                 "Tự động viết hoa sau dấu chấm hoặc xuống dòng mới",
                                 $uppercaseFirstChar)
+                }
+                SettingsCard {
+                    SToggleRow("arrow.uturn.backward",
+                                "Sửa lại từ đã gõ",
+                                "Gõ xong một từ, nhấn ← về cuối từ rồi gõ dấu để sửa tại chỗ.",
+                                $editCommittedWords)
                 }
             }
         }

@@ -10,9 +10,13 @@ final class DispatcherTests: XCTestCase {
     private var sink: RecordingSink!
     private var detector: StubAppDetector!
     private var axInjector: StubAXInjector!
+    /// `InputMethodManager` writes the language flag to UserDefaults; tests
+    /// that toggle it must not leave the developer's setting flipped.
+    private var savedEngineEnabled: Any?
 
     override func setUp() {
         super.setUp()
+        savedEngineEnabled = UserDefaults.standard.object(forKey: DefaultsKey.engineEnabled)
         tap = makeEventTap()
         sink = RecordingSink()
         detector = StubAppDetector(bundleID: "com.test.editor")
@@ -23,6 +27,11 @@ final class DispatcherTests: XCTestCase {
     }
 
     override func tearDown() {
+        if let savedEngineEnabled {
+            UserDefaults.standard.set(savedEngineEnabled, forKey: DefaultsKey.engineEnabled)
+        } else {
+            UserDefaults.standard.removeObject(forKey: DefaultsKey.engineEnabled)
+        }
         tap = nil
         sink = nil
         detector = nil
@@ -137,6 +146,36 @@ final class DispatcherTests: XCTestCase {
     func test_backspaceWhenNotComposing_passesThrough() {
         assertPassed(send(tap, .keyDown, keyDownEvent(51)))
         XCTAssertTrue(sink.calls.isEmpty)
+    }
+
+    /// A composing word can end in a raw key that renders nothing ("aow" →
+    /// screen "ao", "ddf" → "đ"). The engine pops that key and reports an
+    /// empty diff, so consuming the Backspace deleted nothing, and the key
+    /// looked dead. The tap must keep popping invisible raw keys and inject the
+    /// first diff that touches the screen.
+    func test_backspaceAfterInvisibleRawKey_deletesVisibleChar() {
+        for ch in "aow" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+        }
+        XCTAssertEqual(tap._engine.currentOutput(), "ao")
+        sink.reset()
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(51)))
+        XCTAssertEqual(sink.calls, [.backspaces(1), .text("")],
+                       "one Backspace must delete one visible character")
+        XCTAssertEqual(tap._engine.currentOutput(), "a")
+    }
+
+    func test_backspaceAfterInvisibleRawKey_uppercaseWord() {
+        // "ddf" renders "đ" because the trailing 'f' produced no glyph.
+        for ch in "ddf" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+        }
+        XCTAssertEqual(tap._engine.currentOutput(), "đ")
+        sink.reset()
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(51)))
+        XCTAssertEqual(sink.calls, [.backspaces(1), .text("d")])
     }
 
     func test_optionBackspace_resetsAndPassesThrough() {
@@ -568,6 +607,76 @@ final class DispatcherTests: XCTestCase {
         XCTAssertEqual(tap.axRefreshAttempts, EventTap.axRefreshMaxAttempts)
     }
 
+    /// Paste/cut/undo insert or remove text the engine never saw. Keeping the
+    /// composition alive made the next diff backspace into that text (typing
+    /// "vie", pasting, then "ts" deleted two pasted characters).
+    func test_pasteWhileComposing_resetsEngine() {
+        for ch in "vie" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+        }
+        XCTAssertTrue(tap._engine.isComposing)
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(9, flags: .maskCommand, unicode: "v")))
+        XCTAssertFalse(tap._engine.isComposing, "paste must drop the composing word")
+
+        sink.reset()
+        assertConsumed(send(tap, .keyDown, keyDownEvent(17, unicode: "t")))
+        XCTAssertEqual(sink.calls, [.text("t")], "the next key starts a fresh word")
+    }
+
+    func test_undoAndCutWhileComposing_resetEngine() {
+        for keyCode in [Int64(6), 7] { // Z, X
+            tap._engine.reset()
+            for ch in "vie" {
+                assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+            }
+            XCTAssertTrue(tap._engine.isComposing)
+
+            assertPassed(send(tap, .keyDown, keyDownEvent(keyCode, flags: .maskCommand)))
+            XCTAssertFalse(tap._engine.isComposing, "Cmd+\(keyCode) must drop the composing word")
+        }
+    }
+
+    /// An Option combination that types a glyph (dead key: Option+E → ´)
+    /// inserts text behind the engine's back, the same desync as a paste.
+    func test_optionDeadKeyWhileComposing_resetsEngine() {
+        for ch in "vie" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+        }
+        XCTAssertTrue(tap._engine.isComposing)
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(14, flags: .maskAlternate, unicode: "´")))
+        XCTAssertFalse(tap._engine.isComposing, "dead key must drop the composing word")
+
+        sink.reset()
+        assertConsumed(send(tap, .keyDown, keyDownEvent(17, unicode: "t")))
+        XCTAssertEqual(sink.calls, [.text("t")], "the next key must not eat the ´")
+    }
+
+    /// The menu bar / popover / Settings toggle and the Carbon global hotkey
+    /// flip the language without going through `triggerToggle`. The composing
+    /// word from the old language must be dropped there too, or the next
+    /// keystroke applies a stale diff (ghost text).
+    func test_languageToggle_resetsEngine() {
+        for ch in "vie" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+        }
+        XCTAssertTrue(tap._engine.isComposing)
+
+        tap.inputMethodManager.setVietnamese(false)
+        XCTAssertFalse(tap._engine.isComposing, "switching to English must drop the composition")
+
+        // And back again.
+        tap.inputMethodManager.isVietnamese = true
+        for ch in "vie" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+        }
+        XCTAssertTrue(tap._engine.isComposing)
+        tap.inputMethodManager.toggle()
+        XCTAssertFalse(tap._engine.isComposing)
+        tap.inputMethodManager.isVietnamese = true
+    }
+
     func test_mouseDown_resetsEngineAndPassesThrough() {
         for ch in "vie" {
             assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
@@ -706,6 +815,32 @@ final class DispatcherTests: XCTestCase {
         // Budget exhausted — no further lookups.
         assertConsumed(send(tap, .keyDown, keyDownEvent(9, unicode: "v")))
         XCTAssertEqual(detector.refreshCallCount, EventTap.axRefreshMaxAttempts)
+    }
+
+    /// Spotlight is most often opened from a browser or an editor. The refresh
+    /// budget used to skip compound/chromium apps entirely, so Cmd+Space while
+    /// Safari/Chrome/Notes/TextEdit/Mail was focused never detected Spotlight:
+    /// the keystrokes kept going through the CGEvent path, which Spotlight
+    /// ignores, and typing there was lost.
+    func test_refreshBudget_runsWhenStaleAppIsCompound() {
+        detector = StubAppDetector(
+            bundleID: "com.apple.Safari",
+            refreshResults: ["com.apple.Safari", "com.apple.Spotlight"]
+        )
+        tap.appDetector = detector
+        tap.cachedCompoundApps = ["com.apple.Safari"]
+        tap.cachedChromiumApps = ["com.apple.Safari"]
+
+        // Cmd keyDown arms the budget; Space opens Spotlight.
+        assertPassed(send(tap, .flagsChanged, keyDownEvent(54, flags: .maskCommand)))
+        assertPassed(send(tap, .keyDown, keyDownEvent(49, flags: .maskCommand)))
+        XCTAssertEqual(detector.refreshCallCount, 1, "compound apps must still be re-resolved")
+
+        // Next keystroke finds Spotlight and routes into AX mode.
+        assertConsumed(send(tap, .keyDown, keyDownEvent(9, unicode: "v")))
+        XCTAssertEqual(detector.bundleID, "com.apple.Spotlight")
+        XCTAssertEqual(axInjector.fedChars, ["v"])
+        XCTAssertTrue(sink.calls.isEmpty, "Spotlight typing must not go through CGEvent")
     }
 
     // MARK: - Custom global hotkey (in-tap detection)
@@ -1068,6 +1203,46 @@ final class DispatcherTests: XCTestCase {
         // app shortcuts (F5 refresh) — they must pass through untouched.
         assertPassed(send(tap, .keyDown, keyDownEvent(96, unicode: "\u{F708}")))
         XCTAssertTrue(sink.calls.isEmpty)
+    }
+
+    /// English mode must keep the sentence-start machine running: leaving it
+    /// untouched kept `isAtSentenceStart` true for the whole English word, so
+    /// the first Vietnamese letter typed afterwards was capitalized mid-word
+    /// ("hello" in English, then "a" → "A").
+    func test_englishMode_updatesSentenceStartState() {
+        tap.autoCapitalizeEnabled = true
+        tap.isAtSentenceStart = true
+        tap.inputMethodManager.isVietnamese = false
+
+        for ch in "hello" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+        }
+        XCTAssertFalse(tap.isAtSentenceStart)
+
+        tap.inputMethodManager.isVietnamese = true
+        sink.reset()
+        assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: "a")))
+        XCTAssertEqual(sink.calls, [.text("a")], "mid-word must not be capitalized")
+    }
+
+    /// Auto-capitalize is about the sentence, not the input method.
+    func test_englishMode_capitalizesAtSentenceStart() {
+        tap.autoCapitalizeEnabled = true
+        tap.isAtSentenceStart = true
+        tap.inputMethodManager.isVietnamese = false
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(4, unicode: "h")))
+        XCTAssertEqual(sink.calls, [.text("H")])
+        XCTAssertFalse(tap.isAtSentenceStart)
+    }
+
+    func test_englishMode_enterStartsNewSentence() {
+        tap.autoCapitalizeEnabled = true
+        tap.isAtSentenceStart = false
+        tap.inputMethodManager.isVietnamese = false
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(36)))
+        XCTAssertTrue(tap.isAtSentenceStart)
     }
 
     // MARK: - Non-Latin layout auto-disable

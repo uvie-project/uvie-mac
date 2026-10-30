@@ -319,15 +319,22 @@ struct AppsPane: View {
 
     private func loadCompoundApps() {
         let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customCompoundApps) ?? []
-        let allBundleIDs = defaultCompoundApps + custom
+        let removed = Set(UserDefaults.standard.stringArray(forKey: DefaultsKey.removedCompoundApps) ?? [])
+        let allBundleIDs = defaultCompoundApps.filter { !removed.contains($0) } + custom
         compoundApps = allBundleIDs.map { bundleID in
             AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
         }
     }
 
     private func saveCompoundApps() {
-        let custom = compoundApps.map { $0.bundleID }.filter { !defaultCompoundApps.contains($0) }
-        UserDefaults.standard.set(custom, forKey: DefaultsKey.customCompoundApps)
+        let current = compoundApps.map { $0.bundleID }
+        let currentSet = Set(current)
+        UserDefaults.standard.set(current.filter { !defaultCompoundApps.contains($0) },
+                                 forKey: DefaultsKey.customCompoundApps)
+        // Remember which defaults were removed: the custom list alone cannot
+        // express a deletion, so the defaults came back on the next launch.
+        UserDefaults.standard.set(defaultCompoundApps.filter { !currentSet.contains($0) },
+                                 forKey: DefaultsKey.removedCompoundApps)
     }
 
     private func addCompoundApp(_ bundleID: String) {
@@ -385,15 +392,20 @@ struct AppsPane: View {
 
     private func loadChromiumApps() {
         let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customChromiumApps) ?? []
-        let allBundleIDs = defaultChromiumApps + custom
+        let removed = Set(UserDefaults.standard.stringArray(forKey: DefaultsKey.removedChromiumApps) ?? [])
+        let allBundleIDs = defaultChromiumApps.filter { !removed.contains($0) } + custom
         chromiumApps = allBundleIDs.map { bundleID in
             AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
         }
     }
 
     private func saveChromiumApps() {
-        let custom = chromiumApps.map { $0.bundleID }.filter { !defaultChromiumApps.contains($0) }
-        UserDefaults.standard.set(custom, forKey: DefaultsKey.customChromiumApps)
+        let current = chromiumApps.map { $0.bundleID }
+        let currentSet = Set(current)
+        UserDefaults.standard.set(current.filter { !defaultChromiumApps.contains($0) },
+                                 forKey: DefaultsKey.customChromiumApps)
+        UserDefaults.standard.set(defaultChromiumApps.filter { !currentSet.contains($0) },
+                                 forKey: DefaultsKey.removedChromiumApps)
     }
 
     private func addChromiumApp(_ bundleID: String) {
@@ -418,15 +430,20 @@ struct AppsPane: View {
 
     private func loadBypassApps() {
         let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customBypassApps) ?? []
-        let allBundleIDs = defaultBypassApps + custom
+        let removed = Set(UserDefaults.standard.stringArray(forKey: DefaultsKey.removedBypassApps) ?? [])
+        let allBundleIDs = defaultBypassApps.filter { !removed.contains($0) } + custom
         bypassApps = allBundleIDs.map { bundleID in
             AppEntry(bundleID: bundleID, icon: AppIconCache.shared.icon(for: bundleID))
         }
     }
 
     private func saveBypassApps() {
-        let custom = bypassApps.map { $0.bundleID }.filter { !defaultBypassApps.contains($0) }
-        UserDefaults.standard.set(custom, forKey: DefaultsKey.customBypassApps)
+        let current = bypassApps.map { $0.bundleID }
+        let currentSet = Set(current)
+        UserDefaults.standard.set(current.filter { !defaultBypassApps.contains($0) },
+                                 forKey: DefaultsKey.customBypassApps)
+        UserDefaults.standard.set(defaultBypassApps.filter { !currentSet.contains($0) },
+                                 forKey: DefaultsKey.removedBypassApps)
     }
 
     private func addBypassApp(_ bundleID: String) {

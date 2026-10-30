@@ -9,15 +9,6 @@ import XCTest
 /// the keys it touches and restores them in tearDown so the suite never
 /// leaks state into the developer's real environment.
 final class FeaturesTests: XCTestCase {
-    /// Keys the tests (or the managers they construct) read and write.
-    private let watchedKeys = [
-        "Macros",
-        DefaultsKey.macroEnabled,
-        "smartSwitchKeyStateMap_v1",
-        "smartSwitchKey", // legacy MemoryManager format
-        DefaultsKey.smartSwitchKey,
-        DefaultsKey.engineEnabled,
-    ]
     private var savedDefaults: [String: Any?] = [:]
 
     override func setUp() {
@@ -46,6 +37,12 @@ final class FeaturesTests: XCTestCase {
         "smartSwitchKey", // legacy MemoryManager format
         DefaultsKey.smartSwitchKey,
         DefaultsKey.engineEnabled,
+        DefaultsKey.customCompoundApps,
+        DefaultsKey.customChromiumApps,
+        DefaultsKey.customBypassApps,
+        DefaultsKey.removedCompoundApps,
+        DefaultsKey.removedChromiumApps,
+        DefaultsKey.removedBypassApps,
     ]
 
     /// Runs the main queue long enough for `.receive(on: DispatchQueue.main)`
@@ -178,6 +175,38 @@ final class FeaturesTests: XCTestCase {
 
         XCTAssertEqual(manager.currentAppBundleID, "com.apple.finder")
         XCTAssertFalse(manager.isVietnamese, "app switch must restore the remembered language")
+    }
+
+    /// The launch app must be seeded as the "current app". Otherwise its
+    /// language was never saved on the first switch away, and the first return
+    /// to it inherited the other app's language.
+    func test_inputMethod_seedsLaunchAppForPerAppMemory() throws {
+        guard let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else {
+            throw XCTSkip("no frontmost app in this environment")
+        }
+        let manager = InputMethodManager()
+        XCTAssertEqual(manager.currentAppBundleID, frontmost)
+    }
+
+    // MARK: - App classification lists
+
+    /// Removing a built-in default app from Settings used to be a no-op: the
+    /// custom list only holds additions, so the default came back on the next
+    /// launch. `removed*` keys carry the deletion.
+    func test_appClassification_removedDefaultsAreHonored() {
+        UserDefaults.standard.set(["com.apple.Safari"], forKey: DefaultsKey.removedCompoundApps)
+        UserDefaults.standard.set(["com.apple.TextEdit"], forKey: DefaultsKey.removedChromiumApps)
+        UserDefaults.standard.set(["com.apple.iphonesimulator"], forKey: DefaultsKey.removedBypassApps)
+
+        XCTAssertFalse(getCompoundApps().contains("com.apple.Safari"))
+        XCTAssertTrue(getCompoundApps().contains("com.apple.Notes"), "other defaults stay")
+        XCTAssertFalse(getChromiumBrowsers().contains("com.apple.TextEdit"))
+        XCTAssertFalse(getBypassApps().contains("com.apple.iphonesimulator"))
+        XCTAssertTrue(getBypassApps().contains("com.apple.loginwindow"))
+
+        // Re-adding it as a custom app overrides the removal.
+        UserDefaults.standard.set(["com.apple.Safari"], forKey: DefaultsKey.customCompoundApps)
+        XCTAssertTrue(getCompoundApps().contains("com.apple.Safari"))
     }
 
     // MARK: - MacroManager

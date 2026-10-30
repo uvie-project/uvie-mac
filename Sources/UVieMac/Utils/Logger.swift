@@ -121,16 +121,6 @@ final class Logger {
             parts.append("(no log file)")
         }
         parts.append("")
-
-        parts.append("=== uviemac_perf.log ===")
-        let perfURL = URL(fileURLWithPath: "/tmp/uviemac_perf.log")
-        if let data = try? Data(contentsOf: perfURL), let s = String(data: data, encoding: .utf8) {
-            let tail = s.count > 100_000 ? String(s.suffix(100_000)) : s
-            parts.append(tail)
-        } else {
-            parts.append("(no perf log)")
-        }
-
         return parts.joined(separator: "\n")
     }
 

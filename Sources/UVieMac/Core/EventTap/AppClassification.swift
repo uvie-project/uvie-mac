@@ -6,10 +6,11 @@ import Cocoa
 /// Matched by prefix OR exact bundle ID.
 let defaultCompoundApps: Set<String> = AppDefaults.compoundApps
 
-/// Get compound apps from UserDefaults (defaults + custom)
+/// Get compound apps from UserDefaults (defaults - removed + custom)
 func getCompoundApps() -> Set<String> {
     let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customCompoundApps) ?? []
-    return defaultCompoundApps.union(Set(custom))
+    let removed = Set(UserDefaults.standard.stringArray(forKey: DefaultsKey.removedCompoundApps) ?? [])
+    return defaultCompoundApps.subtracting(removed).union(Set(custom))
 }
 
 /// Apps that need Accessibility text injection instead of CGEventTap.
@@ -23,10 +24,11 @@ let axApps: Set<String> = AppDefaults.axApps
 /// leaving the user unable to type at all.
 let defaultBypassApps: Set<String> = AppDefaults.bypassApps
 
-/// Get bypass apps from UserDefaults (defaults + custom)
+/// Get bypass apps from UserDefaults (defaults - removed + custom)
 func getBypassApps() -> Set<String> {
     let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customBypassApps) ?? []
-    return defaultBypassApps.union(Set(custom))
+    let removed = Set(UserDefaults.standard.stringArray(forKey: DefaultsKey.removedBypassApps) ?? [])
+    return defaultBypassApps.subtracting(removed).union(Set(custom))
 }
 
 /// Apps the user explicitly wants to exclude from UVieMac processing.
@@ -43,10 +45,11 @@ func getExcludedApps() -> Set<String> {
 /// instead of plain backspace (avoids duplicate chars).
 let defaultChromiumBrowsers: Set<String> = AppDefaults.chromiumBrowsers
 
-/// Get Chromium browsers from UserDefaults (defaults + custom)
+/// Get Chromium browsers from UserDefaults (defaults - removed + custom)
 func getChromiumBrowsers() -> Set<String> {
     let custom = UserDefaults.standard.stringArray(forKey: DefaultsKey.customChromiumApps) ?? []
-    return defaultChromiumBrowsers.union(Set(custom))
+    let removed = Set(UserDefaults.standard.stringArray(forKey: DefaultsKey.removedChromiumApps) ?? [])
+    return defaultChromiumBrowsers.subtracting(removed).union(Set(custom))
 }
 
 func checkIsCompoundApp(_ bundleID: String) -> Bool {

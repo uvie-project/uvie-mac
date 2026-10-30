@@ -159,9 +159,13 @@ final class AXTextInjector {
         // In Swift, CFTypeRef from Copy functions is ARC-managed — no
         // manual CFRelease needed. The bridge to AXUIElement transfers
         // ownership to ARC automatically.
-        // No kAXValueAttribute probe here: it cost one AX round-trip per
-        // keystroke and both branches returned the element anyway. Non-text
-        // fields are rejected by `tryInject` (getTextValue returns nil).
+        // `AXUIElement` casts are not runtime-checked (`as?` is treated as
+        // always succeeding by the compiler), so verify the actual CF type
+        // first. A broken AX hierarchy can hand back e.g. a CFString for
+        // kAXFocusedUIElementAttribute, and the forced cast would then trap
+        // on the event-tap callback and kill the app. Same guard as
+        // `EventTap.computeIsFocusedFieldWebContent`.
+        guard CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
         let element = focused as! AXUIElement
         AXUIElementSetMessagingTimeout(element, 0.15)
         return element

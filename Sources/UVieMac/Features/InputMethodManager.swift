@@ -3,6 +3,11 @@ import Combine
 
 extension Notification.Name {
     static let resetEngineAfterAppSwitch = Notification.Name("UVieMacResetEngineAfterAppSwitch")
+    /// Posted when the Vietnamese/English mode changes (menu bar, popover,
+    /// Settings, global hotkey, external defaults write). `EventTap` drops the
+    /// composing state on it: a word half-typed in the old language must not
+    /// be diffed by the new one.
+    static let resetEngineForLanguageSwitch = Notification.Name("UVieMacResetEngineForLanguageSwitch")
     /// Posted when the `CGEventTap` is successfully created (after retries).
     static let eventTapDidStart = Notification.Name("UVieMacEventTapDidStart")
     /// Posted when the `CGEventTap` cannot be created after all retries.
@@ -32,6 +37,11 @@ final class InputMethodManager: ObservableObject {
     init(memory: MemoryManager? = nil) {
         self.memory = memory
         isVietnamese = UserDefaults.standard.bool(forKey: DefaultsKey.engineEnabled)
+        // Seed the app whose state `saveCurrentAppState` will persist on the
+        // FIRST switch. Without it the launch app was skipped (empty
+        // bundleID) and the first return to it inherited the other app's
+        // language instead of its own.
+        currentAppBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         setupAppSwitchObserver()
         observeEngineEnabledChanges()
     }
@@ -44,6 +54,7 @@ final class InputMethodManager: ObservableObject {
         isVietnamese.toggle()
         syncEngineEnabled()
         saveCurrentAppState()
+        notifyEngineReset()
     }
 
     func setVietnamese(_ value: Bool) {
@@ -51,6 +62,13 @@ final class InputMethodManager: ObservableObject {
         isVietnamese = value
         syncEngineEnabled()
         saveCurrentAppState()
+        notifyEngineReset()
+    }
+
+    /// Drop any composing state from the previous language (see
+    /// `.resetEngineForLanguageSwitch`).
+    private func notifyEngineReset() {
+        NotificationCenter.default.post(name: .resetEngineForLanguageSwitch, object: nil)
     }
 
     // MARK: - App Switch
@@ -108,6 +126,9 @@ final class InputMethodManager: ObservableObject {
                 self.isSyncingFromDefaults = true
                 self.isVietnamese = enabled
                 self.isSyncingFromDefaults = false
+                // External writer (Settings toggle, `defaults write`): same
+                // stale-composition risk as the in-app toggle paths.
+                self.notifyEngineReset()
             }
             .store(in: &cancellables)
     }
