@@ -4,7 +4,7 @@
 
 ```bash
 UVIE_RS_DIR=../uvie-rs ./build.sh && swift run   # Build + run dev instance
-swift test                                        # Run the integration test suite (163 tests)
+swift test                                        # Run the integration test suite (164 tests)
 swift test --filter EngineTypingTests             # Engine typing behavior only
 swift test --filter DispatcherTests               # Event-tap dispatch decisions only
 swift test --filter FeaturesTests                 # Per-app memory, input-method manager, macros
@@ -15,7 +15,7 @@ swift test --filter FeaturesTests                 # Per-app memory, input-method
 
 ```bash
 UVIE_RS_DIR=../uvie-rs ./build.sh && swift run   # Build + run dev instance
-swift test                                        # Run the integration test suite (163 tests)
+swift test                                        # Run the integration test suite (164 tests)
 swift test --filter EngineTypingTests             # Engine typing behavior only
 swift test --filter DispatcherTests               # Event-tap dispatch decisions only
 swift test --enable-code-coverage                 # Coverage: .build/debug/codecov/
@@ -150,7 +150,11 @@ the `AppContextDetecting` stub at every call site).
   ANY app that is not excluded and not already an AX app: compound/chromium
   apps are re-resolved too, because Cmd+Space from Safari/Chrome/Notes/
   TextEdit/Mail is the common way Spotlight opens, and skipping those apps
-  left the keystrokes on the CGEvent path Spotlight ignores.
+  left the keystrokes on the CGEvent path Spotlight ignores. When the refresh
+  finds a DIFFERENT app it is treated as the app switch the workspace never
+  announced: the engine, caret anchor and web-content cache are dropped
+  first (otherwise the previous app's composing word is diffed into the new
+  one - typing "đó", Cmd+Space, then "w" made Spotlight show "ớ").
   - **Bypass list is user-extendable** (`DefaultsKey.customBypassApps`,
     Settings → Ứng dụng → "Bypass Apps"): system UI + iOS Simulator ship as
     defaults, and users add apps that ignore synthetic CGEvents (VMs,

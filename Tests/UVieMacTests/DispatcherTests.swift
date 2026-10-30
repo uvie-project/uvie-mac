@@ -843,6 +843,38 @@ final class DispatcherTests: XCTestCase {
         XCTAssertTrue(sink.calls.isEmpty, "Spotlight typing must not go through CGEvent")
     }
 
+    /// A switch the workspace never announces must also drop the composing
+    /// word: typing "đó" (no space), Cmd+Space, then "w" used to feed the stale
+    /// word into the AX injector and Spotlight showed "ớ" instead of "ư".
+    func test_refreshBudget_silentSwitchResetsComposingWord() {
+        detector = StubAppDetector(
+            bundleID: "com.test.editor",
+            refreshResults: ["com.test.editor", "com.apple.Spotlight"]
+        )
+        tap.appDetector = detector
+
+        for (keyCode, ch) in [(Int64(2), "d"), (2, "d"), (31, "o"), (1, "s")] {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode, unicode: ch)))
+        }
+        XCTAssertEqual(tap._engine.currentOutput(), "đó")
+        XCTAssertTrue(tap._engine.isComposing)
+        sink.reset()
+
+        // Cmd+Space: the Space keyDown spends one attempt while Spotlight is
+        // still opening (AX still reports the editor).
+        assertPassed(send(tap, .flagsChanged, keyDownEvent(54, flags: .maskCommand)))
+        assertPassed(send(tap, .keyDown, keyDownEvent(49, flags: .maskCommand)))
+        assertPassed(send(tap, .keyUp, keyUpEvent(49, flags: .maskCommand)))
+
+        // 'w': the refresh detects Spotlight and must drop "đó" first.
+        assertConsumed(send(tap, .keyDown, keyDownEvent(13, unicode: "w")))
+        XCTAssertEqual(detector.bundleID, "com.apple.Spotlight")
+        XCTAssertFalse(tap._engine.isComposing, "the previous app's word must not leak into Spotlight")
+        XCTAssertEqual(tap._engine.currentOutput(), "")
+        XCTAssertEqual(axInjector.fedChars, ["w"])
+        XCTAssertTrue(sink.calls.isEmpty)
+    }
+
     // MARK: - Custom global hotkey (in-tap detection)
 
     /// Arms the in-tap custom hotkey the way `applyEngineSettings()` caches

@@ -166,6 +166,17 @@ extension EventTap {
             let fresh = appDetector.bundleID
             if fresh != app {
                 axRefreshAttempts = 0
+                // A switch the workspace never announced (Spotlight, panels).
+                // `observeAppSwitch` never ran, so the composing word from the
+                // previous app is still live and gets diffed into the new one:
+                // typing "đó", Cmd+Space, then "w" fed the stale word to the
+                // AX injector and Spotlight showed "ớ". Treat the detection as
+                // the app switch it is.
+                _engine.reset()
+                editCaretBack = 0
+                invalidateWebContentCache()
+                customChordTapArmed = false
+                handleSentenceStartAcrossAppSwitch(to: fresh)
             } else {
                 axRefreshAttempts -= 1
             }
