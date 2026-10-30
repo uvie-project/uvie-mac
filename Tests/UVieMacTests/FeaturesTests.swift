@@ -185,7 +185,13 @@ final class FeaturesTests: XCTestCase {
             throw XCTSkip("no frontmost app in this environment")
         }
         let manager = InputMethodManager()
-        XCTAssertEqual(manager.currentAppBundleID, frontmost)
+        // Focus can move between the guard and `init` (another app or a panel
+        // taking it), so the contract pinned here is "seeded, not empty" - the
+        // bug was the empty string that made the launch app unrecoverable.
+        XCTAssertFalse(manager.currentAppBundleID.isEmpty)
+        if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == frontmost {
+            XCTAssertEqual(manager.currentAppBundleID, frontmost)
+        }
     }
 
     // MARK: - App classification lists

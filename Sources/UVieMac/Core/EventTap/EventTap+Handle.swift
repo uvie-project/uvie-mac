@@ -164,6 +164,7 @@ extension EventTap {
            !axApps.contains(app) {
             appDetector.refreshBundleID()
             let fresh = appDetector.bundleID
+            Logger.shared.info("AX refresh: stale='\(app)' fresh='\(fresh)' attempts=\(axRefreshAttempts)")
             if fresh != app {
                 axRefreshAttempts = 0
                 // A switch the workspace never announced (Spotlight, panels).
@@ -173,6 +174,7 @@ extension EventTap {
                 // AX injector and Spotlight showed "ớ". Treat the detection as
                 // the app switch it is.
                 _engine.reset()
+                axInjector.reset()
                 editCaretBack = 0
                 invalidateWebContentCache()
                 customChordTapArmed = false
@@ -342,6 +344,12 @@ extension EventTap {
 
         // --- AX mode (Spotlight, etc.) ---
         if isAXApp {
+            // Kept at info level: the AX path is the fragile one (macOS moves
+            // Spotlight's host process), and this is the line that shows which
+            // path handled a keystroke in `log show`.
+            if type == .keyDown {
+                Logger.shared.info("dispatch AX key=\(keyCode) app=\(app)")
+            }
             return handleAXEvent(type: type, keyCode: keyCode, event: event)
         }
 

@@ -4,7 +4,7 @@
 
 ```bash
 UVIE_RS_DIR=../uvie-rs ./build.sh && swift run   # Build + run dev instance
-swift test                                        # Run the integration test suite (167 tests)
+swift test                                        # Run the integration test suite (169 tests)
 swift test --filter EngineTypingTests             # Engine typing behavior only
 swift test --filter DispatcherTests               # Event-tap dispatch decisions only
 swift test --filter FeaturesTests                 # Per-app memory, input-method manager, macros
@@ -15,7 +15,7 @@ swift test --filter FeaturesTests                 # Per-app memory, input-method
 
 ```bash
 UVIE_RS_DIR=../uvie-rs ./build.sh && swift run   # Build + run dev instance
-swift test                                        # Run the integration test suite (167 tests)
+swift test                                        # Run the integration test suite (169 tests)
 swift test --filter EngineTypingTests             # Engine typing behavior only
 swift test --filter DispatcherTests               # Event-tap dispatch decisions only
 swift test --enable-code-coverage                 # Coverage: .build/debug/codecov/
@@ -142,6 +142,15 @@ the `AppContextDetecting` stub at every call site).
   pass-through. The Vietnamese engine is Rust (`uvie-rs`, linked as
   `libuvie.a`) behind `EngineBridge` — diff API returns
   `(backspaces, suffix)` per keystroke.
+- **Spotlight's host process is macOS-version dependent.** `axApps` holds
+  both `com.apple.Spotlight` and `com.apple.campo`: on macOS 26 (Tahoe) the
+  Spotlight panel belongs to `com.apple.campo` (the Apple Intelligence / Siri
+  host) and `com.apple.Spotlight` never appears as the focused application.
+  Missing it sent Spotlight through the CGEvent path, where the synthetic
+  keycode backspace is ignored while the unicode-string suffix still lands:
+  every transform duplicated ("ows" rendered "oớ" / "ớơ"). The
+  `dispatch AX key=... app=...` line at info level in `log show` shows which
+  path handled a keystroke.
 - App classification (excluded/compound/chromium/ax/bypass) is cached in
   `EventTap` and refreshed on settings changes; the focused-app bundleID
   comes from `AppContextDetector` (NSWorkspace notifications) plus a
@@ -194,11 +203,14 @@ the `AppContextDetecting` stub at every call site).
   a read that is behind our own last write (`lastWrittenText`) is injected
   from that write (Spotlight's live search updates asynchronously), and any
   other divergence drops the composition and passes the key through. At the
-  start of a word a fully selected field is replaced instead of appended to,
-  matching native typing: Spotlight reopens with the previous query selected,
-  and appending to it left the old query in front of the new word (a leftover
-  "ơ" + "ows" rendered "ơớ"). Backspace also drains invisible raw keys here
-  (same `EventTap.maxBackspaceDrain` loop as the CGEvent path).
+  start of a word the field only counts as ours while it still starts with
+  the value we wrote (`lastWrittenText`, cleared on every app switch): any
+  other text is the app's, e.g. Spotlight's previous query, and the new word
+  replaces it as native typing would. Appending kept that query in front of
+  the new word (a leftover "o" plus "ows" rendered "oớ", a leftover "ơ"
+  rendered "ơớ"). A fully selected field is replaced too. Backspace also
+  drains invisible raw keys here (same `EventTap.maxBackspaceDrain` loop as
+  the CGEvent path).
 - **Keyboard-layout classification** (`KeyboardLayoutMonitor`) prefers the
   input source's `kTISPropertyInputSourceLanguages` (authoritative) over
   keyword matching on the source ID, and `isLatinSourceID` gained the

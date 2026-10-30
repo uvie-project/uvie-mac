@@ -107,18 +107,35 @@ final class AXTextInjector {
     }
 
     /// Decide the base for the next write. Pure + internal so tests can pin
-    /// the stale-read and divergence rules without AX IPC.
+    /// the foreign-text, stale-read and divergence rules without AX IPC.
     ///
     /// `previous` is the engine's composing output BEFORE the operation: a
     /// field that does not end with it has either not caught up with our last
-    /// write (stale read) or was changed by someone else.
+    /// write (stale read) or was changed by someone else. `lastWritten` is the
+    /// last value we wrote into this field (nil until the first write of the
+    /// session, cleared on every app switch).
     static func resolveBase(
         current: String,
         previous: String,
         lastWritten: String?,
-        sameElement: Bool
+        sameElement: Bool,
+        selectionCoversField: Bool = false
     ) -> InjectionBase {
-        if previous.isEmpty || current.hasSuffix(previous) { return .field(current) }
+        if previous.isEmpty {
+            // Starting a word. The field is ours only while it still starts
+            // with the value we wrote; anything else is the app's text
+            // (Spotlight reopens with the previous query, not always
+            // selected), and typing over a fully selected field replaces it
+            // natively. Both mean the new word starts from an empty base -
+            // appending kept the stale query in front of it ("o" left over
+            // plus "ows" rendered "oớ").
+            let ours = lastWritten.map { current.hasPrefix($0) } ?? false
+            if !current.isEmpty && (!ours || selectionCoversField) {
+                return .field("")
+            }
+            return .field(current)
+        }
+        if current.hasSuffix(previous) { return .field(current) }
         if let lastWritten, sameElement, lastWritten.hasSuffix(previous),
            current.utf16.count <= lastWritten.utf16.count {
             return .lastWrite(lastWritten)
@@ -130,15 +147,23 @@ final class AXTextInjector {
     /// `previous` is the engine's composing output BEFORE the operation.
     private func inject(bs: Int, out: String, element: AXUIElement, previous: String) -> Bool {
         guard let current = getTextValue(element) else {
+            Logger.shared.warn("AXTextInjector: focused element exposes no text value, passing the key through")
             return false
         }
+
+        // One extra AX read, only at the start of a word in a field we already
+        // own (Cmd+A inside Spotlight, or a query left selected by the app).
+        let startsWord = previous.isEmpty && !current.isEmpty
+        let selectionCoversField = startsWord && lastWrittenText != nil
+            && isEntireTextSelected(element, length: current.utf16.count)
 
         var base = current
         switch Self.resolveBase(
             current: current,
             previous: previous,
             lastWritten: lastWrittenText,
-            sameElement: lastWrittenElement.map { CFEqual($0, element) } ?? false
+            sameElement: lastWrittenElement.map { CFEqual($0, element) } ?? false,
+            selectionCoversField: selectionCoversField
         ) {
         case .field(let text):
             base = text
@@ -156,18 +181,6 @@ final class AXTextInjector {
             return false
         }
 
-        // Spotlight reopens with the previous query selected, so typing
-        // replaces it natively. Our whole-value write must do the same: at the
-        // start of a word, a fully selected field is replaced instead of
-        // appended to, otherwise the stale query stays in front of the new
-        // word and every later diff keeps it ("ơ" left over + "ows" rendered
-        // "ơớ"). Only checked while the engine has no composing word - once it
-        // does, the field belongs to us and the diff must apply to it.
-        if bs == 0, !current.isEmpty, previous.isEmpty,
-           isEntireTextSelected(element, length: current.utf16.count) {
-            base = ""
-        }
-
         let newText = Self.composeText(current: base, bs: bs, out: out)
 
         // Trust the AXError instead of a read-back verification. The read-back
@@ -177,17 +190,16 @@ final class AXTextInjector {
         // input ("viej" became "viejj" → fast-typing "việt" became "vieệt").
         // A genuinely failed write is already reported by the error code.
         guard setTextValue(element, text: newText) == .success else {
+            Logger.shared.warn("AXTextInjector: setTextValue failed for '\(newText)', passing the key through")
             return false
         }
         // AX ranges are measured in UTF-16 code units, not Swift Character
         // (grapheme) count. Using .count for decomposed Vietnamese or emoji
         // places the cursor before the real end. Use utf16.count instead.
         setCursorToEnd(element, length: newText.utf16.count)
+        Logger.shared.info("axInject prev='\(previous)' field='\(current)' bs=\(bs) out='\(out)' -> '\(newText)'")
         lastWrittenText = newText
         lastWrittenElement = element
-        if Logger.shared.keystrokeTraceEnabled {
-            Logger.shared.keystroke("axInject prev='\(previous)' field='\(current)' bs=\(bs) out='\(out)' -> '\(newText)'")
-        }
         return true
     }
 

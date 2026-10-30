@@ -268,10 +268,43 @@ final class HelperTests: XCTestCase {
             AXTextInjector.resolveBase(current: "vie", previous: "vie", lastWritten: nil, sameElement: false),
             .field("vie")
         )
-        // No composing word: the diff is a plain append.
+        // A new word after text WE wrote (the commit space was typed
+        // natively): the diff is a plain append.
         XCTAssertEqual(
-            AXTextInjector.resolveBase(current: "đó ", previous: "", lastWritten: nil, sameElement: false),
+            AXTextInjector.resolveBase(current: "đó ", previous: "", lastWritten: "đó ", sameElement: true),
             .field("đó ")
+        )
+        // Empty field: nothing to replace.
+        XCTAssertEqual(
+            AXTextInjector.resolveBase(current: "", previous: "", lastWritten: nil, sameElement: false),
+            .field("")
+        )
+    }
+
+    /// Text the injector never wrote belongs to the app (Spotlight reopens
+    /// with the previous query, not necessarily selected). Appending to it
+    /// kept the stale query in front of the new word: a leftover "o" plus
+    /// "ows" rendered "oớ".
+    func test_axResolveBase_foreignFieldIsReplaced() {
+        // Never wrote into this field (fresh session).
+        XCTAssertEqual(
+            AXTextInjector.resolveBase(current: "o", previous: "", lastWritten: nil, sameElement: false),
+            .field("")
+        )
+        // Our last write is from a previous query: the field does not start
+        // with it, so the text is not ours.
+        XCTAssertEqual(
+            AXTextInjector.resolveBase(current: "o", previous: "", lastWritten: "ơớ", sameElement: true),
+            .field("")
+        )
+        // Same for a fully selected field (Cmd+A inside Spotlight), even
+        // though we wrote the text ourselves.
+        XCTAssertEqual(
+            AXTextInjector.resolveBase(
+                current: "abc", previous: "", lastWritten: "abc", sameElement: true,
+                selectionCoversField: true
+            ),
+            .field("")
         )
     }
 
@@ -304,6 +337,47 @@ final class HelperTests: XCTestCase {
             AXTextInjector.resolveBase(current: "ơx", previous: "ơ", lastWritten: "ơ", sameElement: true),
             .diverged
         )
+    }
+
+    /// End-to-end simulation of the AX loop (engine diff + resolveBase +
+    /// composeText) for the reported duplication: Spotlight opens with a
+    /// previous query still in the field and the user types "ows".
+    func test_axFieldSimulation_leftoverQueryDoesNotDuplicate() {
+        func simulate(field: String, keys: String, lastWritten: String?) -> String {
+            let engine = EngineBridge()
+            engine.setInputMethod(.telex)
+            var current = field
+            var last = lastWritten
+            for ch in keys {
+                let previous = engine.currentOutput()
+                let (bs, out) = engine.feed(char: ch)
+                let base: String
+                switch AXTextInjector.resolveBase(
+                    current: current, previous: previous, lastWritten: last, sameElement: true
+                ) {
+                case .field(let text), .lastWrite(let text):
+                    base = text
+                case .diverged:
+                    // Key passes through and the app inserts it natively.
+                    engine.reset()
+                    current += String(ch)
+                    continue
+                }
+                current = AXTextInjector.composeText(current: base, bs: bs, out: out)
+                last = current
+            }
+            return current
+        }
+
+        // Leftover query, not selected, fresh session.
+        XCTAssertEqual(simulate(field: "o", keys: "ows", lastWritten: nil), "ớ")
+        XCTAssertEqual(simulate(field: "ơ", keys: "ows", lastWritten: nil), "ớ")
+        // A longer leftover query from a previous session.
+        XCTAssertEqual(simulate(field: "ơớ", keys: "ows", lastWritten: nil), "ớ")
+        // Empty Spotlight: unchanged behavior.
+        XCTAssertEqual(simulate(field: "", keys: "ows", lastWritten: nil), "ớ")
+        // Typing a second word after our own text keeps it.
+        XCTAssertEqual(simulate(field: "đó ", keys: "vie", lastWritten: "đó "), "đó vie")
     }
 
     func test_enterStartsNewSentence() {

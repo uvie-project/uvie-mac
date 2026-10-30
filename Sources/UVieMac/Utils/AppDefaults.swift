@@ -57,7 +57,18 @@ enum AppDefaults {
     ]
 
     /// Apps that need Accessibility text injection instead of CGEventTap.
+    ///
+    /// Spotlight accepts synthetic unicode-string events but ignores synthetic
+    /// keycode events (backspace), so the CGEvent path appended the transform
+    /// output without deleting the old character ("ows" → "oớ"). The AX path
+    /// rewrites the field value instead.
+    ///
+    /// macOS 26 (Tahoe) moved the Spotlight panel into `com.apple.campo` (the
+    /// Apple Intelligence / Siri host); `com.apple.Spotlight` no longer appears
+    /// as the focused application, so both are listed. Verified from the AX
+    /// refresh log: Cmd+Space reports `com.apple.campo` as the focused app.
     static let axApps: Set<String> = [
         "com.apple.Spotlight",
+        "com.apple.campo",
     ]
 }

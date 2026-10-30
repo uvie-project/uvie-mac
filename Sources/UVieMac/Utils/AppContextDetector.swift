@@ -86,6 +86,17 @@ final class AppContextDetector: AppContextDetecting {
 
     /// Primary: AXUIElement focused application.
     private func getFocusedAppBundleID() -> String? {
+        // Panels such as Spotlight do not always become the focused
+        // APPLICATION: the app that was frontmost keeps that role while the
+        // panel's search field holds focus. The focused ELEMENT does belong to
+        // the panel's process, so prefer it when it maps to an app we inject
+        // through AX (Spotlight). Restricted to `axApps` on purpose: for other
+        // apps the focused element can live in a helper process (WebContent,
+        // extensions) and would misclassify the app.
+        if let elementApp = focusedElementBundleID(), axApps.contains(elementApp) {
+            return elementApp
+        }
+
         let systemWide = AXUIElementCreateSystemWide()
         // Bound the AX round-trip: this runs on the event-tap callback and a
         // hung target app would otherwise stall the tap past the system
@@ -113,6 +124,24 @@ final class AppContextDetector: AppContextDetecting {
             return runningApp.bundleIdentifier
         }
         return nil
+    }
+
+    /// BundleID of the process that owns the focused AX element (the field
+    /// the user is typing into), if it can be resolved.
+    private func focusedElementBundleID() -> String? {
+        let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, 0.15)
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            systemWide,
+            kAXFocusedUIElementAttribute as CFString,
+            &focused
+        ) == .success, let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        var pid: pid_t = 0
+        AXUIElementGetPid(focused as! AXUIElement, &pid)
+        return NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
     }
 
     /// Fallback: NSWorkspace frontmost application.

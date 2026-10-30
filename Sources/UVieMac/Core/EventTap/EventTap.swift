@@ -553,6 +553,9 @@ final class EventTap: ObservableObject {
             guard let self = self else { return }
             // Reset engine to clear ghost characters from previous app
             self._engine.reset()
+            // Focus moved to another app: the AX field cache belongs to the
+            // field we left, so the next AX write must not append to it.
+            self.axInjector.reset()
             self.editCaretBack = 0
             // Focus moved — the web-content cache is stale.
             self.invalidateWebContentCache()
