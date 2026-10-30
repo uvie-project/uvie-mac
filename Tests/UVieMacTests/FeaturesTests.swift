@@ -164,6 +164,11 @@ final class FeaturesTests: XCTestCase {
 
         let manager = InputMethodManager(memory: memory)
         manager.isVietnamese = true
+        // `init` seeds the current app from the frontmost one, and on a CI
+        // runner that can be Finder itself. A switch TO the current app saves
+        // the live language over the remembered one before restoring it, so
+        // pin a different source app: the scenario is "switch from A to B".
+        manager.currentAppBundleID = "com.test.previous"
 
         // Simulate the workspace activation notification the real flow uses.
         NSWorkspace.shared.notificationCenter.post(
