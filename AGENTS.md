@@ -4,7 +4,7 @@
 
 ```bash
 UVIE_RS_DIR=../uvie-rs ./build.sh && swift run   # Build + run dev instance
-swift test                                        # Run the integration test suite (164 tests)
+swift test                                        # Run the integration test suite (167 tests)
 swift test --filter EngineTypingTests             # Engine typing behavior only
 swift test --filter DispatcherTests               # Event-tap dispatch decisions only
 swift test --filter FeaturesTests                 # Per-app memory, input-method manager, macros
@@ -15,7 +15,7 @@ swift test --filter FeaturesTests                 # Per-app memory, input-method
 
 ```bash
 UVIE_RS_DIR=../uvie-rs ./build.sh && swift run   # Build + run dev instance
-swift test                                        # Run the integration test suite (164 tests)
+swift test                                        # Run the integration test suite (167 tests)
 swift test --filter EngineTypingTests             # Engine typing behavior only
 swift test --filter DispatcherTests               # Event-tap dispatch decisions only
 swift test --enable-code-coverage                 # Coverage: .build/debug/codecov/
@@ -126,7 +126,7 @@ flag afterwards — the toggle writes to UserDefaults and the resulting
 
 Unit tests must not touch the host session, so these stay uncovered:
 `EventTap+SyntheticOutput` (posts real CGEvents), `AXTextInjector`'s AX IPC
-(the pure text transform IS covered via `composeText`), `EventTap`
+(the pure transforms ARE covered: `composeText` and `resolveBase`), `EventTap`
 lifecycle (`startTap` creates a real CGEventTap), `GlobalHotkeyManager`
 Carbon registration (would register real system hotkeys),
 `AccessibilityChecker`/`LaunchAtLoginManager`/`UpdateChecker` (AX trust,
@@ -188,6 +188,17 @@ the `AppContextDetecting` stub at every call site).
   the engine and **pass through** so the app inserts them natively. A second
   guard after `feed` does the same for any empty-diff/no-composing result
   (mirrors `AXTextInjector.feed`'s "engine didn't process it" check).
+- **AX injection never diffs into text it did not write** (`AXTextInjector`):
+  the whole field value is rewritten on every keystroke, so the base matters.
+  `resolveBase` requires the field to end with the engine's composing output;
+  a read that is behind our own last write (`lastWrittenText`) is injected
+  from that write (Spotlight's live search updates asynchronously), and any
+  other divergence drops the composition and passes the key through. At the
+  start of a word a fully selected field is replaced instead of appended to,
+  matching native typing: Spotlight reopens with the previous query selected,
+  and appending to it left the old query in front of the new word (a leftover
+  "ơ" + "ows" rendered "ơớ"). Backspace also drains invisible raw keys here
+  (same `EventTap.maxBackspaceDrain` loop as the CGEvent path).
 - **Keyboard-layout classification** (`KeyboardLayoutMonitor`) prefers the
   input source's `kTISPropertyInputSourceLanguages` (authoritative) over
   keyword matching on the source ID, and `isLatinSourceID` gained the

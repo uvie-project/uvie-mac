@@ -257,6 +257,55 @@ final class HelperTests: XCTestCase {
         XCTAssertEqual(AXTextInjector.composeText(current: "hi👋", bs: 1, out: ""), "hi")
     }
 
+    // MARK: - AX injection base
+
+    /// The AX field is the source of truth for the whole text, but the engine
+    /// only models the composing word. `resolveBase` decides whether the diff
+    /// may be applied to the field text, must use our own last write (stale
+    /// read), or must be dropped (the field was changed by someone else).
+    func test_axResolveBase_inSyncUsesFieldText() {
+        XCTAssertEqual(
+            AXTextInjector.resolveBase(current: "vie", previous: "vie", lastWritten: nil, sameElement: false),
+            .field("vie")
+        )
+        // No composing word: the diff is a plain append.
+        XCTAssertEqual(
+            AXTextInjector.resolveBase(current: "đó ", previous: "", lastWritten: nil, sameElement: false),
+            .field("đó ")
+        )
+    }
+
+    /// Spotlight's live search updates asynchronously: the read can still
+    /// return the text from one keystroke ago. Our own last write is then the
+    /// correct base; using the stale text left the previous character behind
+    /// ("ơ" + tone key rendered "ơớ").
+    func test_axResolveBase_staleReadUsesLastWrite() {
+        XCTAssertEqual(
+            AXTextInjector.resolveBase(current: "", previous: "ơ", lastWritten: "ơ", sameElement: true),
+            .lastWrite("ơ")
+        )
+    }
+
+    func test_axResolveBase_divergedDropsComposition() {
+        // The field does not contain the composing word at all.
+        XCTAssertEqual(
+            AXTextInjector.resolveBase(current: "hello", previous: "ơ", lastWritten: "ơ", sameElement: true),
+            .diverged
+        )
+        // Last write belongs to another field (focus moved).
+        XCTAssertEqual(
+            AXTextInjector.resolveBase(current: "", previous: "ơ", lastWritten: "ơ", sameElement: false),
+            .diverged
+        )
+        // The field is LONGER than our last write: something else (a
+        // passed-through key, a paste) inserted text. Diffing into it would
+        // delete the wrong characters.
+        XCTAssertEqual(
+            AXTextInjector.resolveBase(current: "ơx", previous: "ơ", lastWritten: "ơ", sameElement: true),
+            .diverged
+        )
+    }
+
     func test_enterStartsNewSentence() {
         tap.isAtSentenceStart = false
         tap.updateSentenceStartStateForBreakKey(36) // Return
