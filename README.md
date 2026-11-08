@@ -6,7 +6,7 @@ Bộ gõ tiếng Việt nhanh, nhẹ và chính xác cho macOS, powered by engin
 
 ## Tính năng
 
-- **Telex & VNI**: đầy đủ hai kiểu gõ phổ biến.
+- **Telex, VNI & Simple Telex**: đầy đủ các kiểu gõ phổ biến.
 - **Đặt dấu thanh theo chuẩn mới**: `hoas` → `hoá` (tùy chọn).
 - **Viết tắt vần cuối (relaxed coda)**: `g` → `ng`, `h` → `nh` — gõ `đạg` thay `đặng`, `nhah` thay `nhạnh` (tùy chọn).
 - **Tự động viết hoa đầu câu** sau `.!?` (tùy chọn).
@@ -18,7 +18,7 @@ Bộ gõ tiếng Việt nhanh, nhẹ và chính xác cho macOS, powered by engin
 - **Hiểu tiếng Anh**: từ điển ~15.000 từ giữ nguyên chữ tiếng Anh (`permission`, `system`), không bị đổi thành tiếng Việt.
 - **Fn tap toggle**: nhấn nhanh `Fn` để chuyển Anh/Việt.
 - **Phím tắt tuỳ chỉnh**: cấu hình phím tắt toàn hệ thống để chuyển ngôn ngữ.
-- **AX mode**: hoạt động trong Spotlight và secure text fields.
+- **AX mode**: gõ được trong Spotlight (kể cả `com.apple.campo` trên macOS 26) nhờ Accessibility text injection.
 - **Kiểm tra cập nhật**: tự động kiểm tra 24 giờ/lần, hoặc kiểm tra thủ công
 - **Không Dock icon**: chỉ hiện trên menu bar.
 - **Popover**: toggle các tính năng nhanh trên menu bar.
@@ -49,7 +49,7 @@ Bộ gõ tiếng Việt nhanh, nhẹ và chính xác cho macOS, powered by engin
 ## Cách dùng
 
 - **Chuyển tiếng Việt / English**: click icon menu bar, nhấn `Fn`, hoặc phím tắt tuỳ chỉnh.
-- **Chọn kiểu gõ**: Telex / VNI trong Cài đặt.
+- **Chọn kiểu gõ**: Telex / VNI / Simple Telex trong Cài đặt.
 - **Cài đặt / Thoát**: click icon menu bar.
 
 ## Phím tắt
@@ -69,11 +69,11 @@ App có 6 tab cài đặt:
 
 | Tab | Chức năng |
 | --- | --------- |
-| **Tổng quan** | Bật/tắt engine, chọn Telex/VNI, nhớ ngôn ngữ từng app, tự động tắt khi non-Latin, khởi động cùng macOS, phím tắt |
-| **Bàn phím** | Viết tắt vần cuối (g→ng, h→nh), viết hoa đầu câu |
+| **Tổng quan** | Bật/tắt engine, chọn Telex/VNI/Simple Telex, nhớ ngôn ngữ từng app, tự động tắt khi non-Latin, khởi động cùng macOS, phím tắt |
+| **Bàn phím** | Viết tắt vần cuối (g→ng, h→nh), viết hoa đầu câu, sửa lại từ đã gõ |
 | **Macro** | Bật/tắt macro văn bản, thêm/xóa macro |
-| **Ứng dụng** | Quản lý danh sách app excluded, compound, Chromium |
-| **Nâng cao** | Chính tả hiện đại, Quick Telex, Quick Start, chẩn đoán, gửi log |
+| **Ứng dụng** | Quản lý danh sách app excluded, compound, Chromium, bypass |
+| **Nâng cao** | Chính tả hiện đại, nhận diện từ tiếng Anh, Quick Telex, Quick Start, chẩn đoán, gửi log |
 | **Giới thiệu** | Phiên bản, kiểm tra cập nhật, link GitHub |
 
 ## Build từ source
@@ -138,7 +138,7 @@ Sources/UVieMac/
 
 ## Release CI
 
-Workflow `.github/workflows/release.yml` tự động build universal binary, sign, notarize, tạo DMG, và draft release.
+Workflow `.github/workflows/release.yml` tự động build universal binary, sign, notarize, tạo DMG + zip cho Sparkle, generate `appcast.xml`, publish GitHub release (tag push publish ngay; `workflow_dispatch` có tuỳ chọn `draft` để dry run), và force-push appcast lên nhánh orphan `gh-pages`.
 
 Secrets cần thiết:
 
@@ -151,6 +151,7 @@ Secrets cần thiết:
 | `APPLE_ID` | Apple ID email |
 | `APPLE_TEAM_ID` | Team ID 10 ký tự |
 | `APPLE_APP_PASSWORD` | App-specific password từ appleid.apple.com |
+| `SPARKLE_EDDSA_PRIVATE_KEY` | Private key EdDSA để sign Sparkle update zip |
 
 ## Engine
 
