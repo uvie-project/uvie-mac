@@ -154,7 +154,7 @@ Secrets cần thiết:
 
 ## Engine
 
-UVieMac sử dụng engine `uvie-rs` — Rust library, `no_std`/`no-alloc` compatible, zero deps.
+UVieMac sử dụng engine `uvie-rs` — Rust library zero dependencies, không cấp phát heap trong hot path.
 
 Xem chi tiết kiến trúc và benchmark trong [README của uvie-rs](https://github.com/uvie-project/uvie-rs).
 
