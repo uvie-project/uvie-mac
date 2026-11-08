@@ -3,7 +3,7 @@
 # Downloads the official Sparkle 2.x release from GitHub.
 set -euo pipefail
 
-SPARKLE_VERSION="2.9.4"
+SPARKLE_VERSION="2.10.1"
 FRAMEWORKS_DIR="$(dirname "$0")/../Frameworks"
 TAR_URL="https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
 
