@@ -16,7 +16,10 @@ echo "[fetch-sparkle] Downloading Sparkle ${SPARKLE_VERSION}..."
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-curl -sL "$TAR_URL" -o "$TMP_DIR/Sparkle.tar.xz"
+# GitHub release downloads occasionally return 504 from CI runners;
+# retry with backoff instead of failing the whole build.
+curl -fsSL --retry 8 --retry-all-errors --retry-delay 10 \
+    "$TAR_URL" -o "$TMP_DIR/Sparkle.tar.xz"
 tar xf "$TMP_DIR/Sparkle.tar.xz" -C "$TMP_DIR"
 
 cp -R "$TMP_DIR/Sparkle.framework" "$FRAMEWORKS_DIR/"

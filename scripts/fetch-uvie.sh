@@ -26,7 +26,10 @@ TMP_DIR=$(mktemp -d)
 echo "Fetching uvie-rs v${VERSION}..."
 echo "URL: ${DOWNLOAD_URL}"
 
-curl -fsSL -L "$DOWNLOAD_URL" -o "$TMP_DIR/uvie-macos-universal.tar.gz"
+# GitHub release downloads occasionally return 504 from CI runners;
+# retry with backoff instead of failing the whole build.
+curl -fsSL -L --retry 8 --retry-all-errors --retry-delay 10 \
+    "$DOWNLOAD_URL" -o "$TMP_DIR/uvie-macos-universal.tar.gz"
 
 echo "Extracting to ${OUTPUT_DIR}..."
 mkdir -p "$OUTPUT_DIR"
