@@ -13,10 +13,13 @@ final class DispatcherTests: XCTestCase {
     /// `InputMethodManager` writes the language flag to UserDefaults; tests
     /// that toggle it must not leave the developer's setting flipped.
     private var savedEngineEnabled: Any?
+    /// Same for `CheckSpelling` — the word-boundary-restore test disables it.
+    private var savedCheckSpelling: Any?
 
     override func setUp() {
         super.setUp()
         savedEngineEnabled = UserDefaults.standard.object(forKey: DefaultsKey.engineEnabled)
+        savedCheckSpelling = UserDefaults.standard.object(forKey: DefaultsKey.checkSpelling)
         tap = makeEventTap()
         sink = RecordingSink()
         detector = StubAppDetector(bundleID: "com.test.editor")
@@ -31,6 +34,11 @@ final class DispatcherTests: XCTestCase {
             UserDefaults.standard.set(savedEngineEnabled, forKey: DefaultsKey.engineEnabled)
         } else {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.engineEnabled)
+        }
+        if let savedCheckSpelling {
+            UserDefaults.standard.set(savedCheckSpelling, forKey: DefaultsKey.checkSpelling)
+        } else {
+            UserDefaults.standard.removeObject(forKey: DefaultsKey.checkSpelling)
         }
         tap = nil
         sink = nil
@@ -247,6 +255,125 @@ final class DispatcherTests: XCTestCase {
         XCTAssertFalse(tap._engine.isComposing)
     }
 
+    // MARK: - Word-boundary English restore
+
+    /// Applies a recorded injection plan to `screen` with the caret at the
+    /// end, the same math a real text field performs: backspaces erase,
+    /// text inserts.
+    private func applying(_ calls: [RecordingSink.Call], to screen: String) -> String {
+        var screen = screen
+        for call in calls {
+            switch call.method {
+            case "backspaces":
+                screen = String(screen.dropLast(Int(call.arg) ?? 0))
+            case "text":
+                screen += call.arg
+            case "compoundBackspaces":
+                let parts = call.arg.split(separator: "|", maxSplits: 1)
+                screen = String(screen.dropLast(Int(parts[0]) ?? 0))
+                if parts.count > 1 { screen += parts[1] }
+            default:
+                break
+            }
+        }
+        return screen
+    }
+
+    /// "law" transforms to "lă" while typing; the Space commit detects the
+    /// raw word is English and rewrites it in place before the space lands.
+    func test_space_restoresInvalidWord_law() {
+        tap._engine.setEnglishOverride(true)
+        for ch in "law" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        let screen = tap._engine.currentOutput()
+        XCTAssertEqual(screen, "lă")
+        sink.reset()
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(49)))
+        XCTAssertEqual(sink.calls, [.backspaces(1), .text("aw")])
+        XCTAssertEqual(applying(sink.calls, to: screen), "law")
+    }
+
+    /// Whether "after" stayed literal while typing or was transformed and
+    /// restored at commit, the screen must read "after" once the space lands.
+    func test_space_restoresGluedSyllables_after() {
+        tap._engine.setEnglishOverride(true)
+        for ch in "after" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        let screen = tap._engine.currentOutput()
+        sink.reset()
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(49)))
+        XCTAssertEqual(applying(sink.calls, to: screen), "after")
+    }
+
+    /// A genuine Vietnamese word keeps its render: the commit posts no
+    /// backspaces and no replacement text.
+    func test_space_keepsVietnamese() {
+        tap._engine.setEnglishOverride(true)
+        for ch in "vieetj" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        sink.reset()
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(49)))
+        XCTAssertTrue(sink.calls.allSatisfy { $0 == .text("") },
+                      "a kept Vietnamese word must not emit a restore plan")
+    }
+
+    /// Settings → "Check spelling" off disables the word-boundary restore:
+    /// "law" commits as the transformed "lă" with no rewrite.
+    func test_space_restore_disabledWhenCheckSpellingOff() {
+        UserDefaults.standard.set(false, forKey: DefaultsKey.checkSpelling)  // restored in tearDown
+        tap.applyEngineSettings()
+        // applyEngineSettings() re-reads every cached flag and app list from
+        // the real defaults — re-pin the fixture values makeEventTap() set.
+        tap._engine.setInputMethod(.telex)
+        tap.autoCapitalizeEnabled = false
+        tap.autoDisableOnNonLatinLayout = false
+        tap.fnHotkeyEnabled = false
+        tap.customHotkeyEnabled = false
+        tap.cachedExcludedApps = []
+        tap.cachedCompoundApps = []
+        tap.cachedChromiumApps = []
+        tap.cachedBypassApps = defaultBypassApps
+
+        for ch in "law" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        let screen = tap._engine.currentOutput()
+        sink.reset()
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(49)))
+        XCTAssertTrue(sink.calls.allSatisfy { $0 == .text("") },
+                      "checkSpelling off must not emit a restore plan")
+        XCTAssertEqual(applying(sink.calls, to: screen), screen)
+    }
+
+    /// English context: after committed English words, a Vietnamese-looking
+    /// render ("hơ") is still restored to its English raw ("how") at Space.
+    func test_space_englishContext_howAreYou() {
+        tap._engine.setEnglishOverride(true)
+        for word in ["you", "know", "how"] {
+            for ch in word {
+                assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+            }
+            if word == "how" {
+                break  // the third Space is the action under test
+            }
+            assertPassed(send(tap, .keyDown, keyDownEvent(49)))
+        }
+        let screen = tap._engine.currentOutput()
+        XCTAssertEqual(screen, "hơ")
+        sink.reset()
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(49)))
+        XCTAssertEqual(sink.calls, [.backspaces(1), .text("ow")])
+        XCTAssertEqual(applying(sink.calls, to: screen), "how")
+    }
+
     // MARK: - Post-commit word editing (LabanKey-style)
 
     /// Types `word`, commits it with space, arrows left onto the word end,
@@ -323,15 +450,15 @@ final class DispatcherTests: XCTestCase {
     }
 
     func test_escapeRestoresWholeWordAfterSyllableSplit() {
-        // "master" renders "mátẻ" — the split commits "má" and only "ter"
-        // stays composing. Escape must restore the WHOLE word ("master"),
+        // "bister" renders "bítẻ" — the split commits "bí" and only "ter"
+        // stays composing. Escape must restore the WHOLE word ("bister"),
         // not just the composing tail (which used to post "ter").
-        for ch in "master" {
+        for ch in "bister" {
             assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))), "char \(ch)")
         }
         sink.reset()
         assertConsumed(send(tap, .keyDown, keyDownEvent(53)))
-        XCTAssertEqual(sink.calls, [.backspaces(4), .text("master")])
+        XCTAssertEqual(sink.calls, [.backspaces(4), .text("bister")])
         XCTAssertFalse(tap._engine.isComposing)
     }
 

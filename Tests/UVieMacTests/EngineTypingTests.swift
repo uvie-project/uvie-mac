@@ -74,11 +74,15 @@ final class EngineTypingTests: XCTestCase {
         // Since the centering-diphthong resolution: "user" is the real
         // Telex spelling of "uể" (s = sắc, e joins the uê nucleus, r =
         // huyền) and "banana" V-C-V splits into "bân" + "na".
-        XCTAssertEqual(typeString("user"), "uể")
-        XCTAssertEqual(typeString("banana"), "bânna")
+        // uvie-rs 2.9: glued multi-syllable renders are no longer excluded
+        // from the dictionary ("user", "banana"), and common words whose
+        // Vietnamese reading needs a non-adjacent double ("reset" → "rết"
+        // needs e…e) win as English.
+        XCTAssertEqual(typeString("user"), "user")
+        XCTAssertEqual(typeString("banana"), "banana")
         XCTAssertEqual(typeString("chaos"), "cháo")
         XCTAssertEqual(typeString("most"), "mót")
-        XCTAssertEqual(typeString("reset"), "rết")
+        XCTAssertEqual(typeString("reset"), "reset")
     }
 
     func test_literalsAndDigits() {

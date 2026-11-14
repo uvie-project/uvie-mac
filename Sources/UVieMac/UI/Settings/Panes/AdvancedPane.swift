@@ -21,7 +21,7 @@ struct AdvancedPane: View {
                 SettingsCard {
                     SToggleRow("textformat.abc",
                                 "Khôi phục từ tiếng Anh",
-                                "Tự nhận diện từ tiếng Anh phổ biến (tests, system, character…) và giữ nguyên dạng gốc thay vì biến đổi theo Telex.",
+                                "Giữ nguyên từ tiếng Anh (reset, after, how are you…) và trả lại đúng phím đã gõ khi từ vừa gõ không phải tiếng Việt hợp lệ (law, dawf…).",
                                 $checkSpelling)
                 }
             }
