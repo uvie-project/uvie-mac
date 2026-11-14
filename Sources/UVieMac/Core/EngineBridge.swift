@@ -41,6 +41,21 @@ func uvie_engine_commit(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePointe
 @_silgen_name("uvie_engine_edit_at")
 func uvie_engine_edit_at(_ engine: OpaquePointer?, _ caret_back: Int, _ ch: CChar, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int, _ out_fwd_del: UnsafeMutablePointer<Int>?) -> Int
 
+@_silgen_name("uvie_engine_backspace_at")
+func uvie_engine_backspace_at(_ engine: OpaquePointer?, _ caret_back: Int, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int) -> Int
+
+@_silgen_name("uvie_engine_note_separator")
+func uvie_engine_note_separator(_ engine: OpaquePointer?)
+
+@_silgen_name("uvie_engine_remove_separator")
+func uvie_engine_remove_separator(_ engine: OpaquePointer?) -> Int32
+
+@_silgen_name("uvie_engine_trailing_gap")
+func uvie_engine_trailing_gap(_ engine: OpaquePointer?) -> Int
+
+@_silgen_name("uvie_engine_last_caret_back")
+func uvie_engine_last_caret_back(_ engine: OpaquePointer?) -> Int
+
 @_silgen_name("uvie_engine_is_composing")
 func uvie_engine_is_composing(_ engine: OpaquePointer?) -> Int32
 
@@ -152,14 +167,15 @@ final class EngineBridge {
     /// (LabanKey-style post-commit editing). `caretBack` is the caret
     /// distance (screen chars) back to the end of the newest committed word;
     /// it must land exactly on a word-end boundary (0 = the newest word,
-    /// + rendered_len + 1 per older word) or strictly inside a word
+    /// + rendered_len + gap per older word) or strictly inside a word
     /// (mid-word edit). Returns (backspaces, forwardDeletes, new_output)
     /// when handled, nil when there is no match (the caller then feeds the
     /// key normally). `backspaces` deletes the rendered chars left of the
     /// caret; `forwardDeletes` is 0 for word-end edits and the old word's
     /// tail length for mid-word edits — the host must forward-delete that
     /// many chars before inserting `new_output` (the whole re-rendered
-    /// word).
+    /// word). The edited entry is updated in place and the engine stays
+    /// idle, so the caller's new caret offset is `lastCaretBack`.
     func editAt(caretBack: Int, char: Character) -> (backspaces: Int, forwardDeletes: Int, suffix: String)? {
         guard let engine, caretBack >= 0 else { return nil }
         // Only ASCII keys are feedable; non-ASCII passes 0 which the engine
@@ -175,6 +191,50 @@ final class EngineBridge {
     func reset() {
         guard let engine else { return }
         uvie_engine_reset(engine)
+    }
+
+    // MARK: - Committed-word geometry
+
+    /// Backspace with the caret on a committed word's end: undo that word's
+    /// last raw keystroke (the same "undo one keystroke" semantics as
+    /// Backspace, one step later). `caretBack` must match a word-end
+    /// boundary; mid-word carets and an empty history decline. Returns
+    /// (backspaces, new_output) to apply AT the caret, nil when declined.
+    /// The engine stays idle, so the caller's new caret offset is
+    /// `lastCaretBack`.
+    func backspaceAt(caretBack: Int) -> (Int, String)? {
+        guard let engine, caretBack >= 0 else { return nil }
+        let bs = uvie_engine_backspace_at(engine, caretBack, &scratch, Self.bufferCapacity)
+        guard bs > 0 else { return nil }
+        return (bs - 1, String(cString: scratch))
+    }
+
+    /// A separator char (space / punctuation / Enter) was typed right after
+    /// the newest committed word. No-op while nothing is committed.
+    func noteSeparator() {
+        guard let engine else { return }
+        uvie_engine_note_separator(engine)
+    }
+
+    /// A separator char right after the newest committed word was deleted.
+    /// Returns false when there is no separator left to account for.
+    func removeSeparator() -> Bool {
+        guard let engine else { return false }
+        return uvie_engine_remove_separator(engine) != 0
+    }
+
+    /// Separator chars currently on screen right after the newest committed
+    /// word (the caret offset 0 sits just left of them).
+    var trailingGap: Int {
+        guard let engine else { return 0 }
+        return uvie_engine_trailing_gap(engine)
+    }
+
+    /// Caret offset the host must adopt after the last successful edit or
+    /// committed-word backspace.
+    var lastCaretBack: Int {
+        guard let engine else { return 0 }
+        return uvie_engine_last_caret_back(engine)
     }
 
     func committedText() -> String {

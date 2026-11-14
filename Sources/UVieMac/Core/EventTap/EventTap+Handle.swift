@@ -394,6 +394,46 @@ extension EventTap {
             return Unmanaged.passRetained(event)
         }
 
+        // Idle: the caret is either on a committed word's end (re-open that
+        // word and undo its last keystroke) or inside the separators right of
+        // it (delete one of them). Anything else is an untracked caret: drop
+        // the history and let the OS delete the character.
+        if !_engine.isComposing {
+            if editCaretBack >= 0 {
+                if editCommittedEnabled, !isAXApp,
+                   let (editBs, editOut) = _engine.backspaceAt(caretBack: editCaretBack) {
+                    if Logger.shared.keystrokeTraceEnabled {
+                        Logger.shared.keystroke("backspace-at \(editCaretBack) bs=\(editBs) out='\(editOut)' app=\(app)")
+                    }
+                    if editBs > 0 {
+                        if isCompoundApp {
+                            outputSink.applyCompoundBackspaces(bs: editBs, out: editOut)
+                        } else {
+                            outputSink.applyBackspaces(editBs)
+                        }
+                    }
+                    outputSink.postText(editOut)
+                    // The word is rewritten in place; the engine stays idle
+                    // and reports the caret offset to adopt.
+                    editCaretBack = _engine.lastCaretBack
+                    perfEnd("backspace-edit", keyCode: keyCode, app: app)
+                    return nil
+                }
+                _engine.reset()
+                editCaretBack = 0
+            } else if _engine.removeSeparator() {
+                // The deleted char was one of the separators after the newest
+                // word: the ring stays valid and deleting the last one lands
+                // the caret on the word end (edit-armed).
+                editCaretBack += 1
+            } else {
+                _engine.reset()
+                editCaretBack = 0
+            }
+            perfEnd("backspace-os", keyCode: keyCode, app: app)
+            return Unmanaged.passRetained(event)
+        }
+
         var (bs, out) = _engine.backspace()
         // A trailing raw key that renders nothing (a key the engine kept in
         // its raw buffer, e.g. "aow" → screen "ao", "ddf" → "đ") makes the
@@ -412,18 +452,14 @@ extension EventTap {
             Logger.shared.keystroke("backspace bs=\(bs) out='\(out)' compound=\(isCompoundApp) chromium=\(isChromium)")
         }
         if bs == 0 && out.isEmpty && !_engine.isComposing {
-            // Not composing (or the drain emptied the word) - let OS handle it.
-            // The caret moves 1 char left.
-            // At or left of the anchor (editCaretBack >= 0) the deleted char
-            // belonged to committed text the engine still remembers, so the
-            // history is stale and must be dropped. Right of the anchor
-            // (editCaretBack < 0, the normal post-commit position) the
-            // deleted char is the commit space or later text — the history
-            // stays valid and deleting the space arms editing (offset → 0).
+            // The drain emptied the word — the OS deletes the char left of
+            // the caret. The caret is no longer on a tracked word end, so the
+            // history is dropped (right of the anchor only a separator).
             if editCaretBack >= 0 {
                 _engine.reset()
                 editCaretBack = 0
             } else {
+                _engine.removeSeparator()
                 editCaretBack += 1
             }
             perfEnd("backspace-os", keyCode: keyCode, app: app)
@@ -483,14 +519,9 @@ extension EventTap {
             // engine was composing, the caret sits 1 right of it (the space);
             // when idle, the caret was already right of the anchor and just
             // moves 1 further right — unless it sat INSIDE committed text
-            // (offset > 0), where inserting a char breaks the ring geometry
-            // and the history must be dropped.
-            if !wasComposing && editCaretBack > 0 {
-                _engine.reset()
-                editCaretBack = 0
-            } else {
-                editCaretBack = wasComposing ? -1 : editCaretBack - 1
-            }
+            // (offset > 0) or somewhere untracked, where the inserted char
+            // breaks the ring geometry and the history must be dropped.
+            afterWordBreak(wasComposing: wasComposing)
 
             // Check if the committed text ends with sentence delimiter
             // Note: Space after .!? doesn't make it a new sentence start yet
@@ -498,6 +529,31 @@ extension EventTap {
         }
         perfEnd("space", keyCode: keyCode, app: app)
         return Unmanaged.passRetained(event)
+    }
+
+    /// Shared caret bookkeeping after a word-terminating key was passed
+    /// through (Space, punctuation, Enter, other break chars): the app
+    /// inserts the separator natively, at the caret, so the newest committed
+    /// word grows its on-screen gap and the caret moves one right of it.
+    /// When the caret is not at the end of the tracked separators (inside
+    /// committed text, or an untracked spot) the history is dropped.
+    /// Mirrors `after_word_break` in uvie-rs's portable dispatcher.
+    private func afterWordBreak(wasComposing: Bool) {
+        if wasComposing {
+            // The commit just recorded the word; the separator lands right
+            // after it.
+            editCaretBack = 0
+            _engine.noteSeparator()
+            editCaretBack = -1
+        } else if editCaretBack <= 0 && editCaretBack == -_engine.trailingGap {
+            // The caret sits at the end of the tracked separators — one more
+            // lands there and the gap grows with it.
+            _engine.noteSeparator()
+            editCaretBack -= 1
+        } else {
+            _engine.reset()
+            editCaretBack = 0
+        }
     }
 
     // MARK: - Break key handler
@@ -582,30 +638,28 @@ extension EventTap {
                 // keystroke would "edit" the phantom instead of the word).
                 if wasComposing {
                     commitAndInject()
+                    // The caret sits at the just-committed word's end.
+                    editCaretBack = 0
                 }
-                // At or left of the anchor (offset >= 0) the deleted char
-                // belonged to committed text, so the history is stale; right
-                // of it the deletion shrinks the caret's distance by one.
-                if editCaretBack >= 0 {
+                // Between the newest word's end and the end of its trailing
+                // separators the deletion removes one separator (the gap
+                // shrinks, the distance back to the word is unchanged). At
+                // the end of the gap it removes untracked text, which leaves
+                // the ring intact. Inside committed text the geometry
+                // breaks: reset.
+                if editCaretBack > 0 {
                     _engine.reset()
                     editCaretBack = 0
-                } else {
-                    editCaretBack += 1
+                } else if -editCaretBack < _engine.trailingGap {
+                    _engine.removeSeparator()
                 }
             } else {
                 commitAndInject()
-                if !wasComposing && editCaretBack > 0 {
-                    // A break char inserted inside committed text breaks the
-                    // ring geometry — same reset as the space path.
-                    _engine.reset()
-                    editCaretBack = 0
-                } else {
-                    // The anchor moves to the just-committed word's end. When
-                    // the engine was composing, the caret sits 1 right of it
-                    // (the break char); when idle, the caret keeps its offset
-                    // and moves 1 further right past the inserted break char.
-                    editCaretBack = wasComposing ? -1 : editCaretBack - 1
-                }
+                // The anchor moves to the just-committed word's end. When the
+                // engine was composing, the caret sits 1 right of it (the
+                // break char); when idle, the caret keeps its offset and
+                // moves 1 further right past the inserted break char.
+                afterWordBreak(wasComposing: wasComposing)
             }
 
             // Enter/Return starts a new sentence
@@ -699,6 +753,28 @@ extension EventTap {
             return Unmanaged.passRetained(event)
         }
 
+        // Punctuation and other non-alphanumeric ASCII keys terminate the
+        // word exactly like Space — the engine never sees them. Feeding them
+        // made the engine treat the char as a boundary on its own terms and
+        // drop the committed-word history, so editing after ". " or a double
+        // space was impossible. Commit what is composing, move the anchor the
+        // same way a Space does, and pass the key through so the app inserts
+        // the character natively. Auto-capitalize stays out of it (punctuation
+        // is never capitalized); the sentence state machine still sees the
+        // char, so "." starts a new sentence.
+        // Mirrors `is_word_boundary` in uvie-rs (whitespace or ASCII
+        // non-alphanumeric; digits stay feedable — VNI uses 0-9 as keys).
+        if firstChar.isWhitespace
+            || (firstChar.isASCII && !firstChar.isLetter && !firstChar.isNumber) {
+            let wasComposing = _engine.isComposing
+            commitAndInject()
+            afterWordBreak(wasComposing: wasComposing)
+            updateSentenceStartState(after: firstChar)
+            passedThroughKeys.insert(keyCode)
+            perfEnd("char-punct", keyCode: keyCode, app: app)
+            return Unmanaged.passRetained(event)
+        }
+
         // Apply auto-capitalize if at sentence start
         let transformedChar = applyAutoCapitalize(to: firstChar)
 
@@ -707,7 +783,7 @@ extension EventTap {
         // re-enter that word with the key applied and re-render it in place.
         // The engine walks its committed-word history and fires when
         // caretBack exactly matches a word-end boundary (0 = newest word,
-        // + rendered_len + 1 per older word) or lands strictly inside a
+        // + rendered_len + gap per older word) or lands strictly inside a
         // word (mid-word edit); unmatched carets (word start, unseen jumps)
         // decline and the key feeds normally.
         // Mid-word edits return forwardDeletes > 0: the old word's tail
@@ -738,15 +814,22 @@ extension EventTap {
                 }
             }
             outputSink.postText(out)
-            // The anchor moves to the edited word's end, which is where the
-            // caret now sits.
-            editCaretBack = 0
+            // The caret now sits at the edited word's end — the engine says
+            // exactly how far that is from the new newest word's end (a
+            // mid-word edit of an older word leaves it short of the anchor).
+            editCaretBack = _engine.lastCaretBack
             perfEnd("char-edit", keyCode: keyCode, app: app)
             return nil
         }
         if editCommittedEnabled, !isAXApp, editCaretBack > 0 {
             // Off-boundary typing inside earlier text invalidates the
             // committed-word history.
+            _engine.reset()
+            editCaretBack = 0
+        }
+        if !_engine.isComposing, editCaretBack < 0, editCaretBack != -_engine.trailingGap {
+            // Right of the anchor the caret is only tracked through the
+            // trailing separators; anywhere else is an unseen caret jump.
             _engine.reset()
             editCaretBack = 0
         }

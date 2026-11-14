@@ -210,6 +210,35 @@ final class DispatcherTests: XCTestCase {
         XCTAssertFalse(tap._engine.isComposing)
     }
 
+    /// Punctuation terminates the word exactly like Space: the engine never
+    /// sees it (the app inserts it natively) and the committed-word history
+    /// survives — feeding it used to wipe the ring, so editing after ". " was
+    /// impossible.
+    func test_punctuation_commitsPassesThroughAndKeepsHistory() {
+        for ch in "vieetj" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        XCTAssertEqual(tap._engine.currentOutput(), "việt")
+        sink.reset()
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(47, unicode: ".")))
+        XCTAssertFalse(tap._engine.isComposing, "punctuation commits the word")
+        XCTAssertEqual(tap.editCaretBack, -1, "the caret sits right of the period")
+        XCTAssertTrue(sink.calls.allSatisfy { $0 == .text("") },
+                      "the character is the app's job — no replacement text")
+
+        // The passed-through keyDown keeps its keyUp.
+        assertPassed(send(tap, .keyUp, keyUpEvent(47, unicode: ".")))
+
+        // The word is still editable: one left reaches its end.
+        assertPassed(send(tap, .keyDown, keyDownEvent(123)))
+        XCTAssertEqual(tap.editCaretBack, 0)
+
+        sink.reset()
+        assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: "s"), unicode: "s")))
+        XCTAssertEqual(sink.calls, [.backspaces(2), .text("ết")])
+    }
+
     func test_space_macroExpansion_consumesAndInjects() {
         MacroManager.shared.macros = [MacroManager.Macro(abbreviation: "việt", expansion: "X")]
         MacroManager.shared.enabledCache = true
@@ -532,8 +561,8 @@ final class DispatcherTests: XCTestCase {
 
     func test_editCommittedWord_midSentenceSecondWord() {
         // "ab cd eg " — arrow back onto "cd" (the middle word) and edit it.
-        // Boundary for cd's end = len("eg") + 1 = 3 behind the anchor; the
-        // post-commit caret starts 1 right of it, so 4 arrow-lefts.
+        // Boundary for cd's end = len("eg") + its 1 separator = 3 behind the
+        // anchor; the post-commit caret starts 1 right of it, so 4 arrows.
         for word in ["ab", "cd", "eg"] {
             for ch in word {
                 assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
@@ -626,14 +655,32 @@ final class DispatcherTests: XCTestCase {
     }
 
     /// Forward Delete removes the char right of the caret without moving it.
-    /// Deleting the commit space lands the caret on the word end — the same
+    /// At the END of the commit space it deletes untracked text (the space
+    /// stays and so does the ring); INSIDE the tracked separators it removes
+    /// one of them, so the next Backspace lands on the word end — the same
     /// position the idle-backspace path uses to arm post-commit editing.
-    func test_forwardDelete_deletingSpaceArmsEdit() {
+    func test_forwardDelete_shrinksTrackedSeparators() {
         for ch in "don" {
             assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
         }
-        assertPassed(send(tap, .keyDown, keyDownEvent(49)))   // space → offset -1
-        assertPassed(send(tap, .keyDown, keyDownEvent(117)))  // fwd-del → offset 0
+        assertPassed(send(tap, .keyDown, keyDownEvent(49)))   // space → gap 1, offset -1
+        XCTAssertEqual(tap.editCaretBack, -1)
+
+        // Caret right of the space: the deleted char is untracked text.
+        assertPassed(send(tap, .keyDown, keyDownEvent(117)))
+        XCTAssertEqual(tap.editCaretBack, -1)
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(49)))   // space → gap 2, offset -2
+        XCTAssertEqual(tap.editCaretBack, -2)
+
+        // One left puts the caret between the two spaces: the forward delete
+        // removes the second one and the offset is unchanged.
+        assertPassed(send(tap, .keyDown, keyDownEvent(123)))
+        assertPassed(send(tap, .keyDown, keyDownEvent(117)))
+        XCTAssertEqual(tap.editCaretBack, -1)
+
+        // The caret now sits at the end of the single remaining space.
+        assertPassed(send(tap, .keyDown, keyDownEvent(51)))   // backspace → offset 0
         XCTAssertEqual(tap.editCaretBack, 0)
 
         sink.reset()
@@ -655,6 +702,134 @@ final class DispatcherTests: XCTestCase {
         assertPassed(send(tap, .keyDown, keyDownEvent(49)))   // space mid-word
         XCTAssertEqual(tap.editCaretBack, 0)
         XCTAssertFalse(tap._engine.isComposing)
+    }
+
+    // MARK: - Committed-word ring (caret simulator)
+
+    /// Caret-aware screen simulator over the real `EventTap`: applies every
+    /// recorded injection plan at the caret and, for a PASSED key, the app's
+    /// native effect (insert the char, Backspace deletes left, Left/Right
+    /// move the caret, Enter inserts a newline). Mirrors
+    /// `../uvie-rs/crates/uvie-host/examples/zz_sim.rs`.
+    /// Script chars: `<` Backspace, `{` Left, `}` Right, others type.
+    private func simulate(_ script: String) -> String {
+        var screen: [Character] = []
+        var caret = 0
+
+        func applyPlan(_ calls: [RecordingSink.Call]) {
+            for call in calls {
+                switch call.method {
+                case "backspaces", "compoundBackspaces", "selectionBackspaces":
+                    let arg = call.arg.split(separator: "|", maxSplits: 1).first.map(String.init)
+                        ?? call.arg
+                    for _ in 0..<(Int(arg) ?? 0) where caret > 0 {
+                        caret -= 1
+                        screen.remove(at: caret)
+                    }
+                case "forwardDeletes", "compoundForwardDeletes", "selectionForwardDeletes":
+                    for _ in 0..<(Int(call.arg) ?? 0) where caret < screen.count {
+                        screen.remove(at: caret)
+                    }
+                case "text":
+                    for ch in call.arg {
+                        screen.insert(ch, at: caret)
+                        caret += 1
+                    }
+                default:
+                    break
+                }
+            }
+        }
+
+        func applyNative(_ ch: Character) {
+            switch ch {
+            case "<":
+                if caret > 0 {
+                    caret -= 1
+                    screen.remove(at: caret)
+                }
+            case "{":
+                if caret > 0 { caret -= 1 }
+            case "}":
+                if caret < screen.count { caret += 1 }
+            case "\n":
+                screen.insert("\n", at: caret)
+                caret += 1
+            default:
+                screen.insert(ch, at: caret)
+                caret += 1
+            }
+        }
+
+        for scriptChar in script {
+            var code: Int64 = 0
+            var unicode: String?
+            switch scriptChar {
+            case "<": code = 51
+            case "{": code = 123
+            case "}": code = 124
+            case "\n": code = 36
+            case " ": code = 49
+            default:
+                code = keyCode(for: scriptChar)
+                unicode = String(scriptChar)
+            }
+            sink.reset()
+            let result = send(tap, .keyDown, keyDownEvent(code, unicode: unicode))
+            applyPlan(sink.calls)
+            if let result {
+                result.release()
+                applyNative(scriptChar)
+            }
+        }
+
+        var out = String(screen)
+        out.insert("|", at: out.index(out.startIndex, offsetBy: caret))
+        return out
+    }
+
+    /// Ports the uvie-rs dispatcher scenarios (`zz_sim.rs`): editing across
+    /// punctuation / double separators, editing an older word without
+    /// destroying the newer ones, and Backspace re-opening a committed word.
+    /// Each case starts from a fresh tap, like a fresh simulator.
+    func test_committedWordRing_caretScenarios() {
+        let cases: [(String, String)] = [
+            // Editing across punctuation / double separators.
+            ("vieet. {{j", "việt|. "),
+            ("ddi hoc. {{j", "đi học|. "),
+            ("tieng  {{j", "tiệng|  "),
+            // Editing an OLDER word keeps the newer ones editable.
+            ("vieet nam {{{{{j}}}}}{j", "việt nạm| "),
+            // Backspace re-opens a committed word.
+            ("vieet <<j", "việ|"),
+            ("vieet <<tj", "việt|"),
+            // Plain word-end edits.
+            ("vieet {j", "việt| "),
+            ("vieet{j", "việt|"),
+            ("vieet,{j", "việt|,"),
+            // Older words in a longer sentence.
+            ("chao ban {{{{{f", "chào| ban "),
+            ("ban, toi {{{{{{f", "bàn|, toi "),
+            ("moot hai ba {{{{{{{{j", "một| hai ba "),
+        ]
+
+        for (script, want) in cases {
+            tap = makeEventTap()
+            tap.editCommittedEnabled = true
+            sink = RecordingSink()
+            tap.outputSink = sink
+            tap.appDetector = detector
+            tap.axInjector = axInjector
+            // Pin the engine options the scenarios were recorded with
+            // (zz_sim: Telex + dictionary / restore-raw override, every other
+            // knob off) so a developer's real settings cannot skew them.
+            tap._engine.setModernOrthography(false)
+            tap._engine.setRelaxedCoda(false)
+            tap._engine.setQuickTelex(false)
+            tap._engine.setQuickStart(false)
+            tap._engine.setEnglishOverride(true)
+            XCTAssertEqual(simulate(script), want, "script \(script)")
+        }
     }
 
     /// When the system disables the tap (timeout/user input), keystrokes
@@ -708,7 +883,7 @@ final class DispatcherTests: XCTestCase {
             "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7,
             "c": 8, "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15,
             "y": 16, "t": 17, "u": 32, "i": 34, "o": 31, "p": 35, "l": 37,
-            "j": 38, "k": 40, "n": 45, "m": 46,
+            "j": 38, "k": 40, "n": 45, "m": 46, ",": 43, ".": 47,
         ]
         return map[ch] ?? Int64(ch.asciiValue ?? 0)
     }

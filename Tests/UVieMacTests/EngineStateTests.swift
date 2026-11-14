@@ -139,9 +139,11 @@ final class EngineStateTests: XCTestCase {
         XCTAssertEqual(edit?.backspaces, 2)
         XCTAssertEqual(edit?.forwardDeletes, 1)
         XCTAssertEqual(edit?.suffix, "dón")
-        // The successful edit leaves the engine composing "dón": commit
-        // it to re-record the word in the edit history.
-        _ = engine.commit()
+        // The edit updates the entry in place and leaves the engine idle;
+        // the caret lands at the edited word's end, which is the offset the
+        // host must adopt.
+        XCTAssertFalse(engine.isComposing)
+        XCTAssertEqual(engine.lastCaretBack, 0)
 
         // caretBack 4 sits at the word start — past the last raw key, so
         // nothing to edit → declined.
@@ -151,6 +153,46 @@ final class EngineStateTests: XCTestCase {
         let endEdit = engine.editAt(caretBack: 0, char: "j")
         XCTAssertNotNil(endEdit)
         XCTAssertEqual(endEdit?.forwardDeletes, 0)
+    }
+
+    func test_separators_trackTheGapAfterTheNewestWord() {
+        let engine = EngineBridge()
+        XCTAssertEqual(engine.trailingGap, 0)
+        XCTAssertFalse(engine.removeSeparator(), "nothing committed — no separator to remove")
+
+        for ch in "don" { _ = engine.feed(char: ch) }
+        _ = engine.commit()
+        XCTAssertEqual(engine.trailingGap, 0)
+
+        engine.noteSeparator()
+        engine.noteSeparator()
+        XCTAssertEqual(engine.trailingGap, 2)
+
+        XCTAssertTrue(engine.removeSeparator())
+        XCTAssertEqual(engine.trailingGap, 1)
+        XCTAssertTrue(engine.removeSeparator())
+        XCTAssertFalse(engine.removeSeparator(), "the gap is already empty")
+        XCTAssertEqual(engine.trailingGap, 0)
+    }
+
+    func test_backspaceAt_undoesTheCommittedWordKeystroke() {
+        let engine = EngineBridge()
+        for ch in "vieet" { _ = engine.feed(char: ch) }
+        XCTAssertEqual(engine.currentOutput(), "viêt")
+        _ = engine.commit()
+        XCTAssertFalse(engine.isComposing)
+
+        // The caret sits on the word's end (caretBack 0): the last raw
+        // keystroke is undone in place.
+        let undo = engine.backspaceAt(caretBack: 0)
+        XCTAssertNotNil(undo)
+        XCTAssertEqual(engine.lastCaretBack, 0, "the caret stays on the word end")
+        XCTAssertFalse(engine.isComposing, "the engine stays idle")
+
+        // An empty history declines.
+        let fresh = EngineBridge()
+        XCTAssertNil(fresh.backspaceAt(caretBack: 0))
+        XCTAssertNil(fresh.backspaceAt(caretBack: 3))
     }
 
     func test_inputMethodSwitch_changesOutput() {
