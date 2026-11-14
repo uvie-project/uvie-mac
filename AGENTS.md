@@ -249,9 +249,11 @@ onto ANY of the last 8 committed words (each word-end boundary is one arrow
 step past the newer words' ends) and type. Implemented by:
 
 - **Engine ring** (`uvie-rs`): `commit_diff()` records
-  `(raw, rendered)` per committed word; `uvie_engine_edit_at(caret_back, ch)`
-  walks the ring from the newest backward accumulating `rendered_len + 1`
-  boundary char per older word, and fires when `caret_back` EXACTLY
+  `(raw, rendered, gap)` per committed word (`gap` = separator chars after
+  it, reported by the host with `uvie_engine_note_separator` /
+  `uvie_engine_remove_separator`; an idle commit records nothing).
+  `uvie_engine_edit_at(caret_back, ch)` walks the ring from the newest
+  backward accumulating `rendered_len + gap` per older word, and fires when `caret_back` EXACTLY
   matches a word-end boundary (0 = newest word) or lands strictly inside
   a word (mid-word edit). The host's tracked offset
   is the ground truth: any model drift (double spaces, pastes, unseen jumps)
@@ -265,9 +267,12 @@ step past the newer words' ends) and type. Implemented by:
   content where synthetic selection doesn't take), then the left part
   through the normal compound-aware path, then posts the word. The caret
   lands at the edited word's end.
-- **Ring truncation on edit**: the edited word AND all newer entries are
-  popped (their anchor geometry is stale once the target is re-entered as
-  the composing word); older entries survive and stay editable.
+- **In-place edits**: the edited entry is updated in place, every other
+  word stays editable, and the engine stays idle. The host re-anchors with
+  `EngineBridge.lastCaretBack` (the edited word's end).
+- **Backspace re-open**: Backspace at a committed word's end
+  (`editCaretBack == end(k)`) calls `backspaceAt(caretBack:)`, which undoes
+  that word's last keystroke in place ("viêt " ⌫⌫ + `j` → "việ").
 - **`EventTap.editCaretBack`** — caret offset (screen chars) from the end of
   the newest committed word (the "anchor"). `0` = caret at the anchor
   (edit-armed); negative = right of it (normal post-commit position);
@@ -279,26 +284,28 @@ step past the newer words' ends) and type. Implemented by:
     Shift+arrows still reset. Other cursor keys, Tab, mouse, selection
     shortcuts, modifier-cursor, Escape, Option+Backspace, non-Latin layout,
     app switch: full reset + `editCaretBack = 0`.
-  - Backspace while idle: `editCaretBack >= 0` → the deleted char belonged
-    to committed text → engine reset + re-anchor to 0; `< 0` → the commit
-    space (or later text) was deleted → history stays valid, offset +1
-    (deleting the space arms editing).
+  - Backspace while idle: `editCaretBack >= 0` → `backspaceAt` (declines
+    mid-word → OS delete + reset); `< 0` → a separator was deleted →
+    `removeSeparator()` + offset +1 (deleting the space arms editing), or a
+    reset when no separator is tracked there.
   - Character key while armed (`editCaretBack >= 0`, engine idle) →
     `EngineBridge.editAt(caretBack:char:)` → inject the diff through the
-    normal compound-aware path and re-anchor the offset to 0 (the engine is
-    composing the edited word). Off-boundary decline → reset + normal feed;
-    `< 0` feeds normally (fresh word after the anchor, history untouched).
-  - Space/Enter while composing: anchor moves to the just-committed word's
-    end, `editCaretBack = -1`.
+    normal compound-aware path and re-anchor to `lastCaretBack`. Off-boundary
+    decline → reset + normal feed; `< 0` feeds a fresh word only at the end
+    of the trailing separators (`-trailingGap`), otherwise resets first.
+  - Space/Enter/punctuation (`afterWordBreak`): composing → commit, note
+    the separator, `editCaretBack = -1`; idle at the end of the tracked
+    separators → note another one; anywhere else → reset. Punctuation is
+    committed and PASSED through (never fed — feeding it used to wipe the
+    ring).
 - Gated by `DefaultsKey.editCommittedWords` (default ON, cached in
   `editCommittedEnabled`, refreshed on settings changes; Settings → Bàn phím
   → "Sửa lại từ đã gõ"). Disabled for AX apps (Spotlight) — AX injection
   rewrites the whole field.
-- Known limits: the ring assumes
-  exactly one boundary char between consecutive commits (drift declines
-  safely); mouse/selection/Tab resets recover. Mid-word edits can't
-  restore the caret to its original position — after an edit it sits at
-  the word's end (the engine is composing it).
+- Known limits: untracked text (pastes, mouse moves) declines safely or
+  resets; mouse/selection/Tab resets recover. Mid-word edits can't restore
+  the caret to its original position — after an edit it sits at the word's
+  end.
 
 ## Escape restores English (EVKey-style)
 
