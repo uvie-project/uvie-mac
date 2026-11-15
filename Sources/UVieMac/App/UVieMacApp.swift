@@ -68,7 +68,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         if Bundle.main.bundleIdentifier != nil,
            Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") != nil,
            Bundle.main.url(forResource: "SUFeedURL", withExtension: nil) != nil || Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil {
-            updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+            updaterController = SPUStandardUpdaterController(startingUpdater: true,
+                                                             updaterDelegate: UpdateManager.shared,
+                                                             userDriverDelegate: nil)
             UpdateManager.shared.register(updaterController!)
         }
 
@@ -86,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             DefaultsKey.autoDisableOnNonLatinLayout: true,
             DefaultsKey.quickTelex:         false,
             DefaultsKey.quickStart:         false,
+            DefaultsKey.autoInstallUpdates: true,
         ])
 
         menuBar = MenuBarController()

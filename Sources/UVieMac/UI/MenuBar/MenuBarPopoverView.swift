@@ -18,6 +18,10 @@ struct MenuBarPopoverView: View {
         VStack(spacing: 0) {
             popoverHeader
             Divider()
+            if updateChecker.hasUpdate {
+                updateRow
+                Divider().padding(.horizontal, 12)
+            }
             languageToggle
             Divider().padding(.horizontal, 12)
             inputMethodRow
@@ -35,14 +39,6 @@ struct MenuBarPopoverView: View {
         HStack(spacing: 8) {
             Text("UVie for Mac")
                 .font(.system(size: 13, weight: .semibold))
-            if updateChecker.hasUpdate {
-                Text("Có cập nhật")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor, in: Capsule())
-            }
             Spacer()
             Text(AppVersion.fullVersion)
                 .font(.system(size: 10, weight: .medium))
@@ -53,6 +49,36 @@ struct MenuBarPopoverView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
+    }
+
+    // MARK: Update Row
+
+    /// Shown only when a newer release exists, so updating does not require a
+    /// detour through Settings → About.
+    private var updateRow: some View {
+        HStack(spacing: 8) {
+            Text("Có bản mới v\(updateChecker.latestVersion ?? "")")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Button { controller.startUpdate() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Cập nhật ngay")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.accentColor, in: Capsule())
+                .foregroundStyle(.white)
+                .fixedSize()
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
     }
 
     // MARK: Language Toggle

@@ -26,9 +26,11 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 UVie for Mac</string>
+	<key>SUAllowsAutomaticUpdates</key>
+	<true/>
 	<key>SUAutomaticallyUpdate</key>
 	<true/>
-	<key>SUEnableAutomaticAUpdates</key>
+	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
 	<string>https://uvie-project.github.io/uvie-mac/appcast.xml</string>

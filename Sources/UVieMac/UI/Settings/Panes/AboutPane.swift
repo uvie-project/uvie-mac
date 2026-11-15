@@ -5,6 +5,7 @@ import SwiftUI
 struct AboutPane: View {
     @StateObject private var updateChecker = UpdateChecker.shared
     @State private var showBugReportGuide = false
+    @State private var autoInstall = UpdateManager.shared.automaticallyInstallsUpdates
 
     var body: some View {
         VStack(spacing: 0) {
@@ -105,6 +106,25 @@ struct AboutPane: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(updateChecker.isChecking)
+
+                    // Automatic installs: Sparkle downloads silently and the
+                    // updater delegate installs + relaunches once the user is
+                    // idle (UVie rarely quits, so install-on-quit never fires).
+                    Toggle(isOn: $autoInstall) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Tự động cài đặt bản cập nhật")
+                                .font(.system(size: 12, weight: .medium))
+                            Text("Tải và cài bản mới ngầm, khởi động lại khi bạn không gõ phím.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                    .frame(maxWidth: 260, alignment: .leading)
+                    .onChange(of: autoInstall) { newValue in
+                        UpdateManager.shared.automaticallyInstallsUpdates = newValue
+                    }
                 }
             }
 

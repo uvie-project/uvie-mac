@@ -60,11 +60,13 @@ final class MenuBarController: ObservableObject {
 
     private func setupPopover() {
         let p = NSPopover()
-        p.contentSize = NSSize(width: 280, height: 388)
         p.behavior = .transient
-        p.contentViewController = NSHostingController(
-            rootView: MenuBarPopoverView(controller: self)
-        )
+        // Size the popover from the SwiftUI content: the "Cập nhật ngay" row
+        // only exists while a release is available, so a fixed height would
+        // clip it (or leave a gap once the app is updated).
+        let host = NSHostingController(rootView: MenuBarPopoverView(controller: self))
+        host.sizingOptions = [.preferredContentSize]
+        p.contentViewController = host
         popover = p
     }
 
@@ -180,6 +182,15 @@ final class MenuBarController: ObservableObject {
         }
 
         SettingsWindow.shared.show()
+    }
+
+    /// Close the popover (Sparkle's window takes focus) and start the install
+    /// flow. In dev builds this opens the releases page instead.
+    func startUpdate() {
+        if let popover, popover.isShown {
+            popover.close()
+        }
+        UpdateManager.shared.checkForUpdates()
     }
 
     func quit() { NSApp.terminate(nil) }

@@ -26,6 +26,9 @@ enum DefaultsKey {
     static let removedCompoundApps = "RemovedCompoundApps"
     static let removedChromiumApps = "RemovedChromiumApps"
     static let removedBypassApps = "RemovedBypassApps"
+    /// Dev-build fallback for the "auto install updates" toggle; packaged
+    /// builds read/write Sparkle's own `automaticallyDownloadsUpdates`.
+    static let autoInstallUpdates = "AutoInstallUpdates"
     static let customToggleEnabled = "CustomToggleEnabled"
     static let customToggleKeyCode = "CustomToggleKeyCode"
     static let customToggleModifiers = "CustomToggleModifiers"
