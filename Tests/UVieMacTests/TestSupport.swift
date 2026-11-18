@@ -99,6 +99,7 @@ final class StubAXInjector: AXTextInjecting {
     private(set) var fedChars: [Character] = []
     private(set) var backspaceCount = 0
     private(set) var commitCount = 0
+    private(set) var committedBoundaries: [Character] = []
     private(set) var resetCount = 0
 
     func feed(char: Character) -> Bool {
@@ -111,8 +112,9 @@ final class StubAXInjector: AXTextInjecting {
         return true
     }
 
-    func commit() -> Bool {
+    func commit(boundary: Character) -> Bool {
         commitCount += 1
+        committedBoundaries.append(boundary)
         return false
     }
 

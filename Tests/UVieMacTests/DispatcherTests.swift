@@ -712,7 +712,12 @@ final class DispatcherTests: XCTestCase {
     /// move the caret, Enter inserts a newline). Mirrors
     /// `../uvie-rs/crates/uvie-host/examples/zz_sim.rs`.
     /// Script chars: `<` Backspace, `{` Left, `}` Right, others type.
-    private func simulate(_ script: String) -> String {
+    /// `step` observes every key with what the tap decided for it and the
+    /// screen afterwards (used by the Backspace walk tests).
+    private func simulate(
+        _ script: String,
+        step: ((_ key: Character, _ passedThrough: Bool, _ calls: [RecordingSink.Call], _ screen: String) -> Void)? = nil
+    ) -> String {
         var screen: [Character] = []
         var caret = 0
 
@@ -781,6 +786,7 @@ final class DispatcherTests: XCTestCase {
                 result.release()
                 applyNative(scriptChar)
             }
+            step?(scriptChar, result != nil, sink.calls, String(screen))
         }
 
         var out = String(screen)
@@ -800,7 +806,8 @@ final class DispatcherTests: XCTestCase {
             ("tieng  {{j", "tiệng|  "),
             // Editing an OLDER word keeps the newer ones editable.
             ("vieet nam {{{{{j}}}}}{j", "việt nạm| "),
-            // Backspace re-opens a committed word.
+            // An idle Backspace is a native one-char delete: the word stays
+            // editable, so 'j' tones the shortened "viê" and 't' restores it.
             ("vieet <<j", "việ|"),
             ("vieet <<tj", "việt|"),
             // Plain word-end edits.
@@ -811,6 +818,19 @@ final class DispatcherTests: XCTestCase {
             ("chao ban {{{{{f", "chào| ban "),
             ("ban, toi {{{{{{f", "bàn|, toi "),
             ("moot hai ba {{{{{{{{j", "một| hai ba "),
+            // English prose (dictionary + retroactive restore) and Vietnamese
+            // prose, as typed in the live scenarios: the boundary char handed
+            // to `commit_with` decides the English/code rules.
+            ("reset ", "reset |"),
+            ("Reset the server ", "Reset the server |"),
+            ("this is a test ", "this is a test |"),
+            ("tieengs Vieetj raast hay ", "tiếng Việt rất hay |"),
+            ("Ddawsk Lawsk ", "Đắk Lắk |"),
+            // A word a code char terminates keeps its literal keystrokes.
+            ("dduwowngf ", "đường |"),
+            ("dduwowngf_ ", "dduwowngf_ |"),
+            // A held Backspace over committed text: one native char per press.
+            ("hello world<<<<<", "hello |"),
         ]
 
         for (script, want) in cases {
@@ -820,16 +840,64 @@ final class DispatcherTests: XCTestCase {
             tap.outputSink = sink
             tap.appDetector = detector
             tap.axInjector = axInjector
-            // Pin the engine options the scenarios were recorded with
-            // (zz_sim: Telex + dictionary / restore-raw override, every other
-            // knob off) so a developer's real settings cannot skew them.
-            tap._engine.setModernOrthography(false)
-            tap._engine.setRelaxedCoda(false)
-            tap._engine.setQuickTelex(false)
-            tap._engine.setQuickStart(false)
-            tap._engine.setEnglishOverride(true)
+            pinEngineOptions()
             XCTAssertEqual(simulate(script), want, "script \(script)")
         }
+    }
+
+    /// Pins the engine options the committed-word scenarios were recorded
+    /// with (zz_sim: Telex + dictionary / restore-raw override, every other
+    /// knob off) so a developer's real settings cannot skew them.
+    private func pinEngineOptions() {
+        tap._engine.setModernOrthography(false)
+        tap._engine.setRelaxedCoda(false)
+        tap._engine.setQuickTelex(false)
+        tap._engine.setQuickStart(false)
+        tap._engine.setEnglishOverride(true)
+    }
+
+    /// A held Backspace over committed text is a plain native delete: every
+    /// press passes through with no injected edit (nothing races the key
+    /// repeat) and the screen loses exactly one char per press. Ports
+    /// `backspace_walks_committed_text_one_char_per_press` from uvie-rs.
+    func test_backspaceHeldOverCommittedText_deletesOneCharPerPress() {
+        tap.editCommittedEnabled = true
+        pinEngineOptions()
+        let presses = 15
+        var decisions: [(passed: Bool, calls: [RecordingSink.Call])] = []
+        var screens: [String] = []
+        let script = "tieengs vieetj " + String(repeating: "<", count: presses)
+        _ = simulate(script) { key, passed, calls, screen in
+            guard key == "<" else { return }
+            decisions.append((passed, calls))
+            screens.append(screen)
+        }
+
+        XCTAssertEqual(decisions.count, presses)
+        XCTAssertTrue(decisions.allSatisfy { $0.passed }, "every press must pass through natively")
+        XCTAssertTrue(
+            decisions.allSatisfy { $0.calls.isEmpty },
+            "a Backspace on committed text must never inject a synthetic edit"
+        )
+
+        var want = "tiếng việt "
+        for screen in screens {
+            want = String(want.dropLast())
+            XCTAssertEqual(screen, want)
+        }
+        XCTAssertTrue(screens.last?.isEmpty ?? false, "15 presses clear the line")
+    }
+
+    /// Deleting chars of an English word never re-renders it as Telex: the
+    /// old keystroke-undo path turned "hello wo" into "hello ư".
+    func test_backspaceOverEnglishWords_staysEnglish() {
+        tap.editCommittedEnabled = true
+        pinEngineOptions()
+        var screens: [String] = []
+        _ = simulate("hello world " + String(repeating: "<", count: 4)) { key, _, _, screen in
+            if key == "<" { screens.append(screen) }
+        }
+        XCTAssertEqual(screens, ["hello world", "hello worl", "hello wor", "hello wo"])
     }
 
     /// When the system disables the tap (timeout/user input), keystrokes
@@ -885,7 +953,8 @@ final class DispatcherTests: XCTestCase {
             "y": 16, "t": 17, "u": 32, "i": 34, "o": 31, "p": 35, "l": 37,
             "j": 38, "k": 40, "n": 45, "m": 46, ",": 43, ".": 47,
         ]
-        return map[ch] ?? Int64(ch.asciiValue ?? 0)
+        // A capital letter is the same physical key with Shift held.
+        return map[ch] ?? map[Character(ch.lowercased())] ?? Int64(ch.asciiValue ?? 0)
     }
 
     // MARK: - Modifiers & mouse
@@ -1048,6 +1117,17 @@ final class DispatcherTests: XCTestCase {
 
         assertPassed(send(tap, .keyDown, keyDownEvent(49)))
         XCTAssertEqual(axInjector.commitCount, 1)
+        XCTAssertEqual(axInjector.committedBoundaries, [" "],
+                       "the boundary char decides the engine's code-token rule")
+    }
+
+    /// Enter commits the AX composition with the newline boundary, which is
+    /// what the engine's code-token rule expects for a line break.
+    func test_axApp_enterCommitsWithNewlineBoundary() {
+        detector.bundleID = "com.apple.Spotlight"
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(36)))
+        XCTAssertEqual(axInjector.committedBoundaries, ["\n"])
     }
 
     func test_axApp_injectionFailure_passesThrough() {

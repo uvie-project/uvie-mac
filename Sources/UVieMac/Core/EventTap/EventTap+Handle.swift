@@ -394,30 +394,24 @@ extension EventTap {
             return Unmanaged.passRetained(event)
         }
 
-        // Idle: the caret is either on a committed word's end (re-open that
-        // word and undo its last keystroke) or inside the separators right of
-        // it (delete one of them). Anything else is an untracked caret: drop
-        // the history and let the OS delete the character.
+        // Idle: the caret is either on a committed word's end (the app deletes
+        // one char natively and the engine only tracks it) or inside the
+        // separators right of it (delete one of them). Anything else is an
+        // untracked caret: drop the history and let the OS delete the char.
         if !_engine.isComposing {
             if editCaretBack >= 0 {
                 if editCommittedEnabled, !isAXApp,
-                   let (editBs, editOut) = _engine.backspaceAt(caretBack: editCaretBack) {
+                   _engine.deleteCharAt(caretBack: editCaretBack) {
                     if Logger.shared.keystrokeTraceEnabled {
-                        Logger.shared.keystroke("backspace-at \(editCaretBack) bs=\(editBs) out='\(editOut)' app=\(app)")
+                        Logger.shared.keystroke("backspace-at \(editCaretBack) tracked app=\(app)")
                     }
-                    if editBs > 0 {
-                        if isCompoundApp {
-                            outputSink.applyCompoundBackspaces(bs: editBs, out: editOut)
-                        } else {
-                            outputSink.applyBackspaces(editBs)
-                        }
-                    }
-                    outputSink.postText(editOut)
-                    // The word is rewritten in place; the engine stays idle
-                    // and reports the caret offset to adopt.
+                    // The key passes through: the app deletes the character
+                    // itself (one visible char per press, no synthetic
+                    // delete + retype racing the key repeat). The word stays
+                    // editable — the engine reports the caret offset to adopt.
                     editCaretBack = _engine.lastCaretBack
-                    perfEnd("backspace-edit", keyCode: keyCode, app: app)
-                    return nil
+                    perfEnd("backspace-at", keyCode: keyCode, app: app)
+                    return Unmanaged.passRetained(event)
                 }
                 _engine.reset()
                 editCaretBack = 0
@@ -506,7 +500,7 @@ extension EventTap {
             }
 
             let wasComposing = _engine.isComposing
-            let (bs, out) = _engine.commit()
+            let (bs, out) = _engine.commitWith(boundary: " ")
             if bs > 0 {
                 if isCompoundApp {
                     outputSink.applyCompoundBackspaces(bs: bs, out: out)
@@ -521,7 +515,7 @@ extension EventTap {
             // moves 1 further right — unless it sat INSIDE committed text
             // (offset > 0) or somewhere untracked, where the inserted char
             // breaks the ring geometry and the history must be dropped.
-            afterWordBreak(wasComposing: wasComposing)
+            afterWordBreak(wasComposing: wasComposing, separator: " ")
 
             // Check if the committed text ends with sentence delimiter
             // Note: Space after .!? doesn't make it a new sentence start yet
@@ -535,20 +529,22 @@ extension EventTap {
     /// through (Space, punctuation, Enter, other break chars): the app
     /// inserts the separator natively, at the caret, so the newest committed
     /// word grows its on-screen gap and the caret moves one right of it.
+    /// `separator` is the char the app is inserting — the engine needs it to
+    /// tell a code identifier (a word glued to `_`, `.`, ...) from prose.
     /// When the caret is not at the end of the tracked separators (inside
     /// committed text, or an untracked spot) the history is dropped.
     /// Mirrors `after_word_break` in uvie-rs's portable dispatcher.
-    private func afterWordBreak(wasComposing: Bool) {
+    private func afterWordBreak(wasComposing: Bool, separator: Character) {
         if wasComposing {
             // The commit just recorded the word; the separator lands right
             // after it.
             editCaretBack = 0
-            _engine.noteSeparator()
+            _engine.noteSeparator(separator)
             editCaretBack = -1
         } else if editCaretBack <= 0 && editCaretBack == -_engine.trailingGap {
             // The caret sits at the end of the tracked separators — one more
             // lands there and the gap grows with it.
-            _engine.noteSeparator()
+            _engine.noteSeparator(separator)
             editCaretBack -= 1
         } else {
             _engine.reset()
@@ -654,12 +650,16 @@ extension EventTap {
                     _engine.removeSeparator()
                 }
             } else {
-                commitAndInject()
+                // Enter (36, keypad 76) is a newline; other word-terminating
+                // keys (Help) have no char — the engine records the boundary
+                // as `"\0"`.
+                let separator: Character = (keyCode == 36 || keyCode == 76) ? "\n" : "\0"
+                commitAndInject(boundary: separator)
                 // The anchor moves to the just-committed word's end. When the
                 // engine was composing, the caret sits 1 right of it (the
                 // break char); when idle, the caret keeps its offset and
                 // moves 1 further right past the inserted break char.
-                afterWordBreak(wasComposing: wasComposing)
+                afterWordBreak(wasComposing: wasComposing, separator: separator)
             }
 
             // Enter/Return starts a new sentence
@@ -670,10 +670,13 @@ extension EventTap {
     }
 
     /// Commit the composing word and inject the resulting diff (the same
-    /// output path as a normal keystroke). Used by Space, break keys and the
-    /// Left/Right arrow commit-before-step-back flow.
-    private func commitAndInject() {
-        let (bs, out) = _engine.commit()
+    /// output path as a normal keystroke). Used by break keys, punctuation
+    /// and the Left/Right arrow commit-before-step-back flow.
+    /// `boundary` is the separator key that ended the word (Space → ' ',
+    /// punctuation → the char, Enter → '\n'); nil commits without a boundary
+    /// char, which is what a caret move (arrow) or a non-ASCII key needs.
+    private func commitAndInject(boundary: Character? = nil) {
+        let (bs, out) = boundary.map { _engine.commitWith(boundary: $0) } ?? _engine.commit()
         if bs > 0 {
             if isCompoundApp {
                 outputSink.applyCompoundBackspaces(bs: bs, out: out)
@@ -767,8 +770,8 @@ extension EventTap {
         if firstChar.isWhitespace
             || (firstChar.isASCII && !firstChar.isLetter && !firstChar.isNumber) {
             let wasComposing = _engine.isComposing
-            commitAndInject()
-            afterWordBreak(wasComposing: wasComposing)
+            commitAndInject(boundary: firstChar)
+            afterWordBreak(wasComposing: wasComposing, separator: firstChar)
             updateSentenceStartState(after: firstChar)
             passedThroughKeys.insert(keyCode)
             perfEnd("char-punct", keyCode: keyCode, app: app)

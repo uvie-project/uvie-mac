@@ -142,6 +142,10 @@ extension EventTap {
         // Absorb an any-keycode-event drop: phantom keyUps.
         post(CGEvent(keyboardEventSource: eventSource, virtualKey: 51, keyDown: false), flags: [])
         post(CGEvent(keyboardEventSource: eventSource, virtualKey: 123, keyDown: false), flags: .maskShift)
+        // The session's combined modifier state follows the LAST posted event:
+        // ending on a Shift-tagged event left Shift latched for every process
+        // until the next real key press. Finish with an unmodified phantom.
+        post(CGEvent(keyboardEventSource: eventSource, virtualKey: 123, keyDown: false), flags: [])
     }
 
     /// Standard backspaces.

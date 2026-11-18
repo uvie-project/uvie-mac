@@ -164,8 +164,8 @@ final class EngineStateTests: XCTestCase {
         _ = engine.commit()
         XCTAssertEqual(engine.trailingGap, 0)
 
-        engine.noteSeparator()
-        engine.noteSeparator()
+        engine.noteSeparator(" ")
+        engine.noteSeparator(" ")
         XCTAssertEqual(engine.trailingGap, 2)
 
         XCTAssertTrue(engine.removeSeparator())
@@ -175,24 +175,35 @@ final class EngineStateTests: XCTestCase {
         XCTAssertEqual(engine.trailingGap, 0)
     }
 
-    func test_backspaceAt_undoesTheCommittedWordKeystroke() {
+    func test_deleteCharAt_shrinksTheCommittedWordAndKeepsItEditable() {
         let engine = EngineBridge()
         for ch in "vieet" { _ = engine.feed(char: ch) }
         XCTAssertEqual(engine.currentOutput(), "viêt")
         _ = engine.commit()
         XCTAssertFalse(engine.isComposing)
 
-        // The caret sits on the word's end (caretBack 0): the last raw
-        // keystroke is undone in place.
-        let undo = engine.backspaceAt(caretBack: 0)
-        XCTAssertNotNil(undo)
+        // The caret sits on the word's end (caretBack 0): the app deletes the
+        // 't' natively (the key passes through) and the engine only shrinks
+        // the word's tracked text.
+        XCTAssertTrue(engine.deleteCharAt(caretBack: 0))
         XCTAssertEqual(engine.lastCaretBack, 0, "the caret stays on the word end")
         XCTAssertFalse(engine.isComposing, "the engine stays idle")
 
-        // An empty history declines.
+        // Mid-word carets and an empty history decline (the host then drops
+        // its caret history and lets the OS delete the char).
+        XCTAssertFalse(engine.deleteCharAt(caretBack: 1))
+        XCTAssertFalse(engine.deleteCharAt(caretBack: -1))
         let fresh = EngineBridge()
-        XCTAssertNil(fresh.backspaceAt(caretBack: 0))
-        XCTAssertNil(fresh.backspaceAt(caretBack: 3))
+        XCTAssertFalse(fresh.deleteCharAt(caretBack: 0))
+        XCTAssertFalse(fresh.deleteCharAt(caretBack: 3))
+
+        // The shortened word stays editable: "viê" + 'j' renders "việ" (the
+        // tone rewrites the ê itself, so only that char is replaced).
+        let edit = engine.editAt(caretBack: 0, char: "j")
+        XCTAssertNotNil(edit)
+        XCTAssertEqual(edit?.backspaces, 1)
+        XCTAssertEqual(edit?.forwardDeletes, 0)
+        XCTAssertEqual(edit?.suffix, "ệ")
     }
 
     func test_inputMethodSwitch_changesOutput() {

@@ -9,7 +9,7 @@ protocol AXTextInjecting: AnyObject {
     func feed(char: Character) -> Bool
     func backspace() -> Bool
     @discardableResult
-    func commit() -> Bool
+    func commit(boundary: Character) -> Bool
     func reset()
 }
 
@@ -38,7 +38,7 @@ extension EventTap {
             if type == .keyUp {
                 return Unmanaged.passRetained(event)
             }
-            let expanded = axInjector.commit()
+            let expanded = axInjector.commit(boundary: " ")
             // If a macro was expanded, consume the space to avoid a trailing
             // space after the expanded text. Otherwise pass through so the
             // app inserts the space natively.
@@ -50,7 +50,10 @@ extension EventTap {
             if type == .keyUp {
                 return Unmanaged.passRetained(event)
             }
-            let expanded = axInjector.commit()
+            // Enter (36, keypad 76) is a newline; other break keys have no
+            // char — the engine records the boundary as `"\0"`.
+            let boundary: Character = (keyCode == 36 || keyCode == 76) ? "\n" : "\0"
+            let expanded = axInjector.commit(boundary: boundary)
             return expanded ? nil : Unmanaged.passRetained(event)
         }
 

@@ -38,14 +38,17 @@ func uvie_engine_backspace(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePoi
 @_silgen_name("uvie_engine_commit")
 func uvie_engine_commit(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int) -> Int
 
+@_silgen_name("uvie_engine_commit_with")
+func uvie_engine_commit_with(_ engine: OpaquePointer?, _ boundary: CChar, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int) -> Int
+
 @_silgen_name("uvie_engine_edit_at")
 func uvie_engine_edit_at(_ engine: OpaquePointer?, _ caret_back: Int, _ ch: CChar, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int, _ out_fwd_del: UnsafeMutablePointer<Int>?) -> Int
 
-@_silgen_name("uvie_engine_backspace_at")
-func uvie_engine_backspace_at(_ engine: OpaquePointer?, _ caret_back: Int, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int) -> Int
+@_silgen_name("uvie_engine_delete_char_at")
+func uvie_engine_delete_char_at(_ engine: OpaquePointer?, _ caret_back: Int) -> Int32
 
 @_silgen_name("uvie_engine_note_separator")
-func uvie_engine_note_separator(_ engine: OpaquePointer?)
+func uvie_engine_note_separator(_ engine: OpaquePointer?, _ ch: CChar)
 
 @_silgen_name("uvie_engine_remove_separator")
 func uvie_engine_remove_separator(_ engine: OpaquePointer?) -> Int32
@@ -82,6 +85,13 @@ final class EngineBridge {
     /// A static constant is passed as the capacity to avoid an exclusive-access
     /// conflict between `&scratch` and `scratch.count` in the same call.
     private var scratch = [CChar](repeating: 0, count: EngineBridge.bufferCapacity)
+
+    /// ASCII byte for the FFI's `char` parameters. Boundary/separator chars
+    /// are ASCII by construction (space, punctuation, newline); a non-ASCII
+    /// char has no byte and maps to 0 ("no char").
+    private static func asciiByte(_ char: Character) -> CChar {
+        CChar(char.asciiValue ?? 0)
+    }
 
     var isComposing: Bool {
         guard let engine else { return false }
@@ -163,6 +173,17 @@ final class EngineBridge {
         return (bs, String(cString: scratch))
     }
 
+    /// Commit the composing word at the separator key `boundary` that ended
+    /// it (Space → ' ', punctuation → the char, Enter → '\n', `"\0"` when the
+    /// host has no char). The boundary char decides the code-identifier
+    /// rule: a word a code char terminates (`raw_chars`, `feed_diff`,
+    /// `UVIE_RS_DIR`) shows its literal keystrokes.
+    func commitWith(boundary: Character) -> (Int, String) {
+        guard let engine else { return (0, "") }
+        let bs = uvie_engine_commit_with(engine, Self.asciiByte(boundary), &scratch, Self.bufferCapacity)
+        return (bs, String(cString: scratch))
+    }
+
     /// Re-enter a committed word with `char` appended to its raw keystrokes
     /// (LabanKey-style post-commit editing). `caretBack` is the caret
     /// distance (screen chars) back to the end of the newest committed word;
@@ -195,25 +216,26 @@ final class EngineBridge {
 
     // MARK: - Committed-word geometry
 
-    /// Backspace with the caret on a committed word's end: undo that word's
-    /// last raw keystroke (the same "undo one keystroke" semantics as
-    /// Backspace, one step later). `caretBack` must match a word-end
-    /// boundary; mid-word carets and an empty history decline. Returns
-    /// (backspaces, new_output) to apply AT the caret, nil when declined.
-    /// The engine stays idle, so the caller's new caret offset is
+    /// Backspace with the caret on a committed word's end: the app deletes one
+    /// visible char natively (the key passes through — no synthetic delete +
+    /// retype racing the key repeat) and the engine only shrinks that word's
+    /// tracked text so it stays editable. `caretBack` must match a word-end
+    /// boundary; mid-word carets and an empty history decline. Returns false
+    /// when the deletion was not tracked — the caller then drops its caret
+    /// history. The engine stays idle, so the caller's new caret offset is
     /// `lastCaretBack`.
-    func backspaceAt(caretBack: Int) -> (Int, String)? {
-        guard let engine, caretBack >= 0 else { return nil }
-        let bs = uvie_engine_backspace_at(engine, caretBack, &scratch, Self.bufferCapacity)
-        guard bs > 0 else { return nil }
-        return (bs - 1, String(cString: scratch))
+    func deleteCharAt(caretBack: Int) -> Bool {
+        guard let engine, caretBack >= 0 else { return false }
+        return uvie_engine_delete_char_at(engine, caretBack) != 0
     }
 
     /// A separator char (space / punctuation / Enter) was typed right after
-    /// the newest committed word. No-op while nothing is committed.
-    func noteSeparator() {
+    /// the newest committed word. The char itself matters: a code char glued
+    /// to the text before it (`_` in `foo_bar`, `.` in `a.b`) marks the next
+    /// word as a code identifier. No-op while nothing is committed.
+    func noteSeparator(_ separator: Character) {
         guard let engine else { return }
-        uvie_engine_note_separator(engine)
+        uvie_engine_note_separator(engine, Self.asciiByte(separator))
     }
 
     /// A separator char right after the newest committed word was deleted.

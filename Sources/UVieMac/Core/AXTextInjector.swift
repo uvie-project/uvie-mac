@@ -231,11 +231,14 @@ final class AXTextInjector {
         return newText
     }
 
-    /// Commit on word boundary. Returns true if a macro expansion was
-    /// performed (caller should consume the triggering key to avoid a
-    /// trailing space/return after the expanded text).
+    /// Commit on word boundary. `boundary` is the separator key that ended
+    /// the word (Space → ' ', Enter → '\n', `"\0"` when there is no char):
+    /// the engine needs it to tell a code identifier from prose. Returns true
+    /// if a macro expansion was performed (caller should consume the
+    /// triggering key to avoid a trailing space/return after the expanded
+    /// text).
     @discardableResult
-    func commit() -> Bool {
+    func commit(boundary: Character) -> Bool {
         // Check for macro expansion first
         if macroManager.isEnabled() {
             // Include V-C-V auto-committed prefix + composing for macro matching.
@@ -257,7 +260,7 @@ final class AXTextInjector {
                 return true
             }
         }
-        _ = engine.commit()
+        _ = engine.commitWith(boundary: boundary)
         return false
     }
 
