@@ -19,6 +19,9 @@ final class RecordingSink: SyntheticOutputSink {
         static func selection(_ n: Int) -> Call { Call(method: "selectionBackspaces", arg: "\(n)") }
         static func selectionForward(_ n: Int) -> Call { Call(method: "selectionForwardDeletes", arg: "\(n)") }
         static func emptyChar() -> Call { Call(method: "emptyChar", arg: "") }
+        static func key(_ code: Int64, _ flags: CGEventFlags = []) -> Call {
+            Call(method: "key", arg: "\(code)|\(flags.rawValue)")
+        }
     }
 
     private(set) var calls: [Call] = []
@@ -57,6 +60,10 @@ final class RecordingSink: SyntheticOutputSink {
 
     func postText(_ string: String) {
         calls.append(.text(string))
+    }
+
+    func postKey(keyCode: Int64, flags: CGEventFlags) {
+        calls.append(.key(keyCode, flags))
     }
 }
 

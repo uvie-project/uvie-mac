@@ -14,6 +14,7 @@ protocol SyntheticOutputSink: AnyObject {
     func applySelectionForwardDeletes(_ count: Int)
     func sendEmptyCharacter()
     func postText(_ string: String)
+    func postKey(keyCode: Int64, flags: CGEventFlags)
 }
 
 extension EventTap: SyntheticOutputSink {}
@@ -110,6 +111,7 @@ extension EventTap {
             down?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
             down?.post(tap: .cgSessionEventTap)
         }
+        releaseSyntheticModifiers()
     }
 
     /// Warm up the synthetic keycode path right after the tap is created.
@@ -172,6 +174,18 @@ extension EventTap {
         }
     }
 
+    /// The session's combined modifier state follows the LAST posted event:
+    /// ending a Shift+arrow selection on a Shift-tagged event left Shift
+    /// latched for every process until the next real key press. Post an
+    /// unmodified phantom keyUp to clear it.
+    func releaseSyntheticModifiers() {
+        guard let eventSource else { return }
+        let release = CGEvent(keyboardEventSource: eventSource, virtualKey: 123, keyDown: false)
+        release?.flags = []
+        release?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
+        release?.post(tap: .cgSessionEventTap)
+    }
+
     /// Shift+Left Arrow selection used for apps where synthetic backspace causes
     /// duplicate characters. The caller must post the replacement text afterward.
     ///
@@ -185,6 +199,7 @@ extension EventTap {
             down?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
             down?.post(tap: .cgSessionEventTap)
         }
+        releaseSyntheticModifiers()
     }
 
     /// Send U+202F (Narrow No-Break Space) to invalidate autocomplete dropdown.
@@ -211,6 +226,25 @@ extension EventTap {
         let down = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: true)
         down?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
         down?.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+        down?.post(tap: .cgSessionEventTap)
+    }
+
+    /// Re-post a key the tap consumed, keeping its keycode and modifier flags
+    /// (Shift+Enter must stay Shift+Enter). Used when a commit rewrite
+    /// consumes the boundary key: the synthetic keyDown is posted AFTER the
+    /// plan, and every post shares the same tap entry so the order is FIFO.
+    /// Only posts keyDown — the app's real keyUp follows the consumed one and
+    /// is passed through by the tap, so the key cycle still balances.
+    func postKey(keyCode: Int64, flags: CGEventFlags) {
+        guard let eventSource else { return }
+        perfNoteEvent(1)
+        let down = CGEvent(
+            keyboardEventSource: eventSource,
+            virtualKey: CGKeyCode(clamping: keyCode),
+            keyDown: true
+        )
+        down?.flags = flags
+        down?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
         down?.post(tap: .cgSessionEventTap)
     }
 }

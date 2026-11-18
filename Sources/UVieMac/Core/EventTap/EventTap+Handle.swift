@@ -500,15 +500,11 @@ extension EventTap {
             }
 
             let wasComposing = _engine.isComposing
-            let (bs, out) = _engine.commitWith(boundary: " ")
-            if bs > 0 {
-                if isCompoundApp {
-                    outputSink.applyCompoundBackspaces(bs: bs, out: out)
-                } else {
-                    outputSink.applyBackspaces(bs)
-                }
+            // A rewrite plan consumes the space and re-posts it as text behind
+            // the plan; an empty plan leaves the original key on its way.
+            let consumed = commitAndInject(boundary: " ") {
+                self.outputSink.postText(" ")
             }
-            outputSink.postText(out)
             // The anchor moves to the just-committed word's end. When the
             // engine was composing, the caret sits 1 right of it (the space);
             // when idle, the caret was already right of the anchor and just
@@ -520,15 +516,19 @@ extension EventTap {
             // Check if the committed text ends with sentence delimiter
             // Note: Space after .!? doesn't make it a new sentence start yet
             // The actual .!? character will set isAtSentenceStart when typed
+            if consumed {
+                perfEnd("space-consumed", keyCode: keyCode, app: app)
+                return nil
+            }
         }
         perfEnd("space", keyCode: keyCode, app: app)
         return Unmanaged.passRetained(event)
     }
 
-    /// Shared caret bookkeeping after a word-terminating key was passed
-    /// through (Space, punctuation, Enter, other break chars): the app
-    /// inserts the separator natively, at the caret, so the newest committed
-    /// word grows its on-screen gap and the caret moves one right of it.
+    /// Shared caret bookkeeping after a word-terminating key landed in the
+    /// app (passed through, or re-posted synthetically behind a rewrite plan):
+    /// the separator sits at the caret, so the newest committed word grows its
+    /// on-screen gap and the caret moves one right of it.
     /// `separator` is the char the app is inserting — the engine needs it to
     /// tell a code identifier (a word glued to `_`, `.`, ...) from prose.
     /// When the caret is not at the end of the tracked separators (inside
@@ -624,6 +624,9 @@ extension EventTap {
             }
 
             let wasComposing = _engine.isComposing
+            // Set when a rewrite plan consumed the boundary key, so the shared
+            // tail below can consume the original event.
+            var consumed = false
             if keyCode == 117 {
                 // Forward Delete removes the char right of the caret — the
                 // caret itself does not move and NO boundary char is
@@ -653,8 +656,22 @@ extension EventTap {
                 // Enter (36, keypad 76) is a newline; other word-terminating
                 // keys (Help) have no char — the engine records the boundary
                 // as `"\0"`.
-                let separator: Character = (keyCode == 36 || keyCode == 76) ? "\n" : "\0"
-                commitAndInject(boundary: separator)
+                let isNewline = keyCode == 36 || keyCode == 76
+                let separator: Character = isNewline ? "\n" : "\0"
+                // A rewrite plan consumes the Return and re-posts it as a
+                // synthetic keyDown (same keycode and modifiers, so Shift+
+                // Enter stays Shift+Enter) behind the plan. Letting the real
+                // Return through first submitted the message in chat apps
+                // before the rewrite arrived, which then hit the empty
+                // composer. An empty plan leaves the original key on its way;
+                // Help inserts nothing, so it always passes through.
+                if isNewline {
+                    consumed = commitAndInject(boundary: separator) {
+                        self.outputSink.postKey(keyCode: keyCode, flags: event.flags)
+                    }
+                } else {
+                    commitAndInject(boundary: separator)
+                }
                 // The anchor moves to the just-committed word's end. When the
                 // engine was composing, the caret sits 1 right of it (the
                 // break char); when idle, the caret keeps its offset and
@@ -664,6 +681,10 @@ extension EventTap {
 
             // Enter/Return starts a new sentence
             updateSentenceStartStateForBreakKey(keyCode)
+            if consumed {
+                perfEnd("break-consumed", keyCode: keyCode, app: app)
+                return nil
+            }
         }
         perfEnd("break", keyCode: keyCode, app: app)
         return Unmanaged.passRetained(event)
@@ -675,8 +696,14 @@ extension EventTap {
     /// `boundary` is the separator key that ended the word (Space → ' ',
     /// punctuation → the char, Enter → '\n'); nil commits without a boundary
     /// char, which is what a caret move (arrow) or a non-ASCII key needs.
-    private func commitAndInject(boundary: Character? = nil) {
+    /// `repostSeparator` re-posts that boundary synthetically, for the callers
+    /// that CONSUME the key. Returns true when the plan rewrote the screen and
+    /// the separator was re-posted — the caller must consume the original key.
+    /// False (empty plan) means the caller passes the key through unchanged.
+    @discardableResult
+    private func commitAndInject(boundary: Character? = nil, repostSeparator: (() -> Void)? = nil) -> Bool {
         let (bs, out) = boundary.map { _engine.commitWith(boundary: $0) } ?? _engine.commit()
+        let rewrote = bs > 0 || !out.isEmpty
         if bs > 0 {
             if isCompoundApp {
                 outputSink.applyCompoundBackspaces(bs: bs, out: out)
@@ -685,6 +712,17 @@ extension EventTap {
             }
         }
         outputSink.postText(out)
+        // A non-empty plan rewrites text that the boundary key has not reached
+        // yet, so the caller consumed that key and the separator is re-posted
+        // here, behind the plan (every synthetic post shares one FIFO tap
+        // entry). Letting the original key through instead put it on screen
+        // BEFORE the plan: the rewrite landed one character to the right
+        // ("this is a test " → "thíis is a test") and an Enter submitted the
+        // message before the rewrite arrived. `"\0"` (the Help key) inserts
+        // nothing, so its caller never consumes and never reposts.
+        guard rewrote, let repostSeparator else { return false }
+        repostSeparator()
+        return true
     }
 
     // MARK: - Regular character handler
@@ -761,18 +799,27 @@ extension EventTap {
         // made the engine treat the char as a boundary on its own terms and
         // drop the committed-word history, so editing after ". " or a double
         // space was impossible. Commit what is composing, move the anchor the
-        // same way a Space does, and pass the key through so the app inserts
-        // the character natively. Auto-capitalize stays out of it (punctuation
-        // is never capitalized); the sentence state machine still sees the
-        // char, so "." starts a new sentence.
+        // same way a Space does, and let the app insert the character natively
+        // (or re-post it behind a rewrite plan). Auto-capitalize stays out of
+        // it (punctuation is never capitalized); the sentence state machine
+        // still sees the char, so "." starts a new sentence.
         // Mirrors `is_word_boundary` in uvie-rs (whitespace or ASCII
         // non-alphanumeric; digits stay feedable — VNI uses 0-9 as keys).
         if firstChar.isWhitespace
             || (firstChar.isASCII && !firstChar.isLetter && !firstChar.isNumber) {
             let wasComposing = _engine.isComposing
-            commitAndInject(boundary: firstChar)
+            // A rewrite plan consumes the punctuation and re-posts it as text
+            // behind the plan; an empty plan leaves the original key on its
+            // way and its keyUp follows via `passedThroughKeys`.
+            let consumed = commitAndInject(boundary: firstChar) {
+                self.outputSink.postText(String(firstChar))
+            }
             afterWordBreak(wasComposing: wasComposing, separator: firstChar)
             updateSentenceStartState(after: firstChar)
+            if consumed {
+                perfEnd("char-punct", keyCode: keyCode, app: app)
+                return nil
+            }
             passedThroughKeys.insert(keyCode)
             perfEnd("char-punct", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)

@@ -115,6 +115,23 @@ final class DispatcherTests: XCTestCase {
         XCTAssertTrue(sink.calls.isEmpty)
     }
 
+    /// Synthetic events (System Events / AppleScript, dictation, VM and
+    /// remote-desktop clients) can carry the unshifted unicode with the Shift
+    /// flag set — the layout translation ran before the modifier applied.
+    /// Reading the raw unicode alone dropped the capital ("Ddawsk" rendered
+    /// "đắk" instead of "Đắk"); `NSEvent.characters` honors the flag, so the
+    /// tap resolves it too.
+    func test_shiftFlagWithLowercaseUnicode_typesCapital() {
+        assertConsumed(send(tap, .keyDown, keyDownEvent(2, flags: .maskShift, unicode: "d")))
+        XCTAssertEqual(tap._engine.currentOutput(), "D")
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(2, unicode: "d")))
+        for ch in "awsk" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        XCTAssertEqual(tap._engine.currentOutput(), "Đắk")
+    }
+
     // MARK: - Bypass apps (apps that ignore synthetic events)
 
     /// Apps in the bypass list never see a consumed key: the real event is
@@ -319,9 +336,12 @@ final class DispatcherTests: XCTestCase {
         XCTAssertEqual(screen, "lă")
         sink.reset()
 
-        assertPassed(send(tap, .keyDown, keyDownEvent(49)))
-        XCTAssertEqual(sink.calls, [.backspaces(1), .text("aw")])
-        XCTAssertEqual(applying(sink.calls, to: screen), "law")
+        assertConsumed(send(tap, .keyDown, keyDownEvent(49)))
+        // A non-empty plan consumes the space and re-posts it as text after
+        // the plan, so the plan erases only the rendered word and the
+        // separator lands last ("lă" → erase 1 → "l" → "aw" → " ").
+        XCTAssertEqual(sink.calls, [.backspaces(1), .text("aw"), .text(" ")])
+        XCTAssertEqual(applying(sink.calls, to: screen), "law ")
     }
 
     /// Whether "after" stayed literal while typing or was transformed and
@@ -335,7 +355,7 @@ final class DispatcherTests: XCTestCase {
         sink.reset()
 
         assertPassed(send(tap, .keyDown, keyDownEvent(49)))
-        XCTAssertEqual(applying(sink.calls, to: screen), "after")
+        XCTAssertEqual(applying(sink.calls, to: screen + " "), "after ")
     }
 
     /// A genuine Vietnamese word keeps its render: the commit posts no
@@ -378,7 +398,7 @@ final class DispatcherTests: XCTestCase {
         assertPassed(send(tap, .keyDown, keyDownEvent(49)))
         XCTAssertTrue(sink.calls.allSatisfy { $0 == .text("") },
                       "checkSpelling off must not emit a restore plan")
-        XCTAssertEqual(applying(sink.calls, to: screen), screen)
+        XCTAssertEqual(applying(sink.calls, to: screen + " "), screen + " ")
     }
 
     /// English context: after committed English words, a Vietnamese-looking
@@ -398,9 +418,101 @@ final class DispatcherTests: XCTestCase {
         XCTAssertEqual(screen, "hơ")
         sink.reset()
 
+        assertConsumed(send(tap, .keyDown, keyDownEvent(49)))
+        XCTAssertEqual(sink.calls, [.backspaces(1), .text("ow"), .text(" ")])
+        XCTAssertEqual(applying(sink.calls, to: screen), "how ")
+    }
+
+    /// A commit diff that rewrites earlier words ("retro" English restore)
+    /// must land on the screen before the separator: a non-empty plan
+    /// CONSUMES the boundary key and re-posts the separator after the plan.
+    /// Live symptom with the key passed through: typing "this is a test "
+    /// left "thíis is a test" on screen — the replacement text landed after
+    /// the app's space, one character to the right of the rewrite.
+    func test_space_retroRestore_consumesSeparator() {
+        tap._engine.setEnglishOverride(true)
+        var screen = ""
+        for ch in "this is a test " {
+            sink.reset()
+            if ch == " " {
+                let result = send(tap, .keyDown, keyDownEvent(49))
+                if let result {
+                    // Empty plan: the app inserts the space itself.
+                    result.release()
+                    screen = applying(sink.calls, to: screen + " ")
+                } else {
+                    // Rewrite plan: it ends with the re-posted separator.
+                    screen = applying(sink.calls, to: screen)
+                }
+            } else {
+                assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+                screen = applying(sink.calls, to: screen)
+            }
+        }
+        XCTAssertEqual(screen, "this is a test ")
+    }
+
+    /// Punctuation terminates the word like Space and takes the same
+    /// consume-and-repost path when the commit rewrites the screen.
+    func test_punctuation_rewriteConsumesAndRepostsSeparator() {
+        tap._engine.setEnglishOverride(true)
+        for ch in "law" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        let screen = tap._engine.currentOutput()
+        XCTAssertEqual(screen, "lă")
+        sink.reset()
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(47, unicode: ".")))
+        XCTAssertEqual(sink.calls, [.backspaces(1), .text("aw"), .text(".")])
+        XCTAssertEqual(applying(sink.calls, to: screen), "law.")
+        // The consumed keyDown's keyUp is suppressed (the app never saw the
+        // press), leaving no half-held key.
+        assertConsumed(send(tap, .keyUp, keyUpEvent(47, unicode: ".")))
+    }
+
+    /// A rewrite plan on Return must consume the real key and re-post it as a
+    /// synthetic key AFTER the plan. Passing the real Return through first
+    /// submitted the message in chat apps before the rewrite arrived, so the
+    /// synthetic backspaces/text hit the empty composer.
+    func test_enter_rewriteConsumesAndRepostsKeyAfterPlan() {
+        tap._engine.setEnglishOverride(true)
+        for ch in "law" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        XCTAssertEqual(tap._engine.currentOutput(), "lă")
+        sink.reset()
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(36)))
+        XCTAssertEqual(sink.calls, [.backspaces(1), .text("aw"), .key(36)])
+        // The real keyUp still passes, so the key cycle balances.
+        assertPassed(send(tap, .keyUp, keyUpEvent(36)))
+    }
+
+    /// Shift+Enter keeps its modifier on the re-posted key.
+    func test_shiftEnter_rewriteRepostsWithShift() {
+        tap._engine.setEnglishOverride(true)
+        for ch in "law" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        sink.reset()
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(36, flags: .maskShift)))
+        XCTAssertEqual(sink.calls, [.backspaces(1), .text("aw"), .key(36, .maskShift)])
+    }
+
+    /// An empty commit plan is the fast path: the original key passes through
+    /// untouched, with no synthetic re-post of the separator.
+    func test_space_emptyPlan_passesThroughWithoutRepost() {
+        for ch in "vieetj" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        XCTAssertEqual(tap._engine.currentOutput(), "việt")
+        sink.reset()
+
         assertPassed(send(tap, .keyDown, keyDownEvent(49)))
-        XCTAssertEqual(sink.calls, [.backspaces(1), .text("ow")])
-        XCTAssertEqual(applying(sink.calls, to: screen), "how")
+        XCTAssertEqual(sink.calls, [.text("")],
+                       "an empty plan must not re-post the space")
     }
 
     // MARK: - Post-commit word editing (LabanKey-style)
@@ -709,8 +821,10 @@ final class DispatcherTests: XCTestCase {
     /// Caret-aware screen simulator over the real `EventTap`: applies every
     /// recorded injection plan at the caret and, for a PASSED key, the app's
     /// native effect (insert the char, Backspace deletes left, Left/Right
-    /// move the caret, Enter inserts a newline). Mirrors
-    /// `../uvie-rs/crates/uvie-host/examples/zz_sim.rs`.
+    /// move the caret, Enter inserts a newline). A CONSUMED boundary key has
+    /// no native effect: its separator arrives from the plan (re-posted text
+    /// or a synthetic `.key(36)`), which is the whole point of consuming it.
+    /// Mirrors `../uvie-rs/crates/uvie-host/examples/zz_sim.rs`.
     /// Script chars: `<` Backspace, `{` Left, `}` Right, others type.
     /// `step` observes every key with what the tap decided for it and the
     /// screen afterwards (used by the Backspace walk tests).
@@ -738,6 +852,14 @@ final class DispatcherTests: XCTestCase {
                 case "text":
                     for ch in call.arg {
                         screen.insert(ch, at: caret)
+                        caret += 1
+                    }
+                case "key":
+                    // A re-posted Return/keypad Enter inserts a newline.
+                    let code = Int64(call.arg.split(separator: "|", maxSplits: 1).first.map(String.init)
+                        ?? call.arg) ?? 0
+                    if code == 36 || code == 76 {
+                        screen.insert("\n", at: caret)
                         caret += 1
                     }
                 default:
@@ -781,11 +903,11 @@ final class DispatcherTests: XCTestCase {
             }
             sink.reset()
             let result = send(tap, .keyDown, keyDownEvent(code, unicode: unicode))
-            applyPlan(sink.calls)
             if let result {
                 result.release()
                 applyNative(scriptChar)
             }
+            applyPlan(sink.calls)
             step?(scriptChar, result != nil, sink.calls, String(screen))
         }
 
@@ -824,6 +946,8 @@ final class DispatcherTests: XCTestCase {
             ("reset ", "reset |"),
             ("Reset the server ", "Reset the server |"),
             ("this is a test ", "this is a test |"),
+            ("this is a test\n", "this is a test\n|"),
+            ("law. ", "law. |"),
             ("tieengs Vieetj raast hay ", "tiếng Việt rất hay |"),
             ("Ddawsk Lawsk ", "Đắk Lắk |"),
             // A word a code char terminates keeps its literal keystrokes.

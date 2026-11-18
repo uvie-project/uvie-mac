@@ -98,6 +98,18 @@ extension EventTap {
             unicodeString: &charBuffer
         )
         guard length > 0 else { return nil }
-        return String(utf16CodeUnits: charBuffer, count: length).first
+        let char = String(utf16CodeUnits: charBuffer, count: length).first
+        // Synthetic events (System Events / AppleScript, accessibility tools,
+        // dictation, VM and remote-desktop clients) can carry the UNSHIFTED
+        // unicode with the Shift flag set: the layout translation ran before
+        // the modifier was applied. `NSEvent.characters` resolves the flag;
+        // reading the raw string alone does not, so a capital typed that way
+        // reached the engine lowercase and the render lost it ("Ddawsk" →
+        // "đắk" instead of "Đắk"). Real hardware always carries the resolved
+        // character, so this only ever restores the capital.
+        if let char, char.isASCII, char.isLowercase, event.flags.contains(.maskShift) {
+            return char.uppercased().first ?? char
+        }
+        return char
     }
 }
