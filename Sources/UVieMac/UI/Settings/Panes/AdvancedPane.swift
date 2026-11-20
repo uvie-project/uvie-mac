@@ -7,6 +7,7 @@ struct AdvancedPane: View {
     @AppStorage(DefaultsKey.checkSpelling) private var checkSpelling: Bool = true
     @AppStorage(DefaultsKey.quickTelex) private var quickTelex: Bool = false
     @AppStorage(DefaultsKey.quickStart) private var quickStart: Bool = false
+    @AppStorage(DefaultsKey.contextLanguageDetection) private var contextLanguageDetection: Bool = true
     @AppStorage(Logger.keystrokeTraceKey) private var keystrokeTrace: Bool = false
 
     var body: some View {
@@ -23,6 +24,12 @@ struct AdvancedPane: View {
                                 "Khôi phục từ tiếng Anh",
                                 "Giữ nguyên từ tiếng Anh (reset, after, how are you…) và trả lại đúng phím đã gõ khi từ vừa gõ không phải tiếng Việt hợp lệ (law, dawf…).",
                                 $checkSpelling)
+                }
+                SettingsCard {
+                    SToggleRow("text.bubble",
+                                "Nhận diện ngôn ngữ theo ngữ cảnh",
+                                "Dùng NaturalLanguage của macOS để biết câu đang viết tiếng Việt hay tiếng Anh: câu tiếng Việt giữ dấu cho từ dễ nhầm (nó, cả, có), câu tiếng Anh giữ từ tiếng Anh.",
+                                $contextLanguageDetection)
                 }
             }
 

@@ -95,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             DefaultsKey.autoDisableOnNonLatinLayout: true,
             DefaultsKey.quickTelex:         false,
             DefaultsKey.quickStart:         false,
+            DefaultsKey.contextLanguageDetection: true,
             DefaultsKey.autoInstallUpdates: true,
         ])
 

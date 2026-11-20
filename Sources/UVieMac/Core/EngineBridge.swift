@@ -50,6 +50,12 @@ func uvie_engine_delete_char_at(_ engine: OpaquePointer?, _ caret_back: Int) -> 
 @_silgen_name("uvie_engine_note_separator")
 func uvie_engine_note_separator(_ engine: OpaquePointer?, _ ch: CChar)
 
+@_silgen_name("uvie_engine_set_context_hint")
+func uvie_engine_set_context_hint(_ engine: OpaquePointer?, _ hint: UInt8)
+
+@_silgen_name("uvie_engine_sentence_text")
+func uvie_engine_sentence_text(_ engine: OpaquePointer?, _ out_buf: UnsafeMutablePointer<CChar>?, _ out_len: Int) -> Int
+
 @_silgen_name("uvie_engine_remove_separator")
 func uvie_engine_remove_separator(_ engine: OpaquePointer?) -> Int32
 
@@ -86,6 +92,25 @@ final class EngineBridge {
     /// conflict between `&scratch` and `scratch.count` in the same call.
     private var scratch = [CChar](repeating: 0, count: EngineBridge.bufferCapacity)
 
+    /// Output buffer capacity for `sentenceText()` — a sentence spans up to
+    /// 8 committed words, far more than one word's 128 bytes.
+    private static let sentenceCapacity = 1024
+    /// Reusable buffer for `sentenceText()`, same rationale as `scratch`.
+    private var sentenceScratch = [CChar](repeating: 0, count: EngineBridge.sentenceCapacity)
+
+    /// NaturalLanguage recognizer behind the sentence-language hint. One per
+    /// engine; asked only at a word commit (see `applyContextHint`).
+    private let contextDetector = ContextLanguageDetector()
+
+    /// Cached `contextLanguageDetection` toggle. `commit`/`commitWith` run on
+    /// the event-tap callback — a UserDefaults read there is disk-backed and
+    /// can stall the tap (same rationale as `Logger.traceEnabledCache`).
+    /// Refreshed on `didChangeNotification`; tests pin it directly.
+    var contextDetectionEnabled = false
+
+    /// Observer token for the cached toggle above.
+    private var contextDefaultsObserver: NSObjectProtocol?
+
     /// ASCII byte for the FFI's `char` parameters. Boundary/separator chars
     /// are ASCII by construction (space, punctuation, newline); a non-ASCII
     /// char has no byte and maps to 0 ("no char").
@@ -100,12 +125,35 @@ final class EngineBridge {
 
     init() {
         engine = uvie_engine_new()
+        contextDetectionEnabled = Self.readContextDetectionEnabled()
+        // Registered after `engine` is set — the closure captures `self`,
+        // which is only valid once init completes. The Settings toggle writes
+        // via @AppStorage in-process, so the notification always fires.
+        contextDefaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.contextDetectionEnabled = Self.readContextDetectionEnabled()
+        }
     }
 
     deinit {
+        if let contextDefaultsObserver {
+            NotificationCenter.default.removeObserver(contextDefaultsObserver)
+        }
         if let engine {
             uvie_engine_free(engine)
         }
+    }
+
+    /// Read the `contextLanguageDetection` toggle off the hot path. A missing
+    /// key counts as enabled: the app registers it as a factory default, and
+    /// an external `defaults delete` must not silently drop the feature.
+    private static func readContextDetectionEnabled() -> Bool {
+        let defaults = UserDefaults.standard
+        return defaults.object(forKey: DefaultsKey.contextLanguageDetection) == nil
+            || defaults.bool(forKey: DefaultsKey.contextLanguageDetection)
     }
 
     // MARK: - Configuration
@@ -147,6 +195,15 @@ final class EngineBridge {
         uvie_engine_set_english_override(engine, enabled ? 1 : 0)
     }
 
+    /// Sentence-language hint the engine applies at the NEXT commit: `.auto`
+    /// (its own rules), `.vietnamese` or `.english`. The engine resets it to
+    /// auto at a sentence boundary and on every reset, so the host re-sends
+    /// the verdict before each commit (see `applyContextHint`).
+    func setContextHint(_ hint: ContextHint) {
+        guard let engine else { return }
+        uvie_engine_set_context_hint(engine, hint.rawValue)
+    }
+
     // MARK: - Keystroke handling
 
     /// Feed a single character. Returns (backspaces, new_output).
@@ -169,6 +226,7 @@ final class EngineBridge {
 
     func commit() -> (Int, String) {
         guard let engine else { return (0, "") }
+        applyContextHint()
         let bs = uvie_engine_commit(engine, &scratch, Self.bufferCapacity)
         return (bs, String(cString: scratch))
     }
@@ -180,6 +238,7 @@ final class EngineBridge {
     /// `UVIE_RS_DIR`) shows its literal keystrokes.
     func commitWith(boundary: Character) -> (Int, String) {
         guard let engine else { return (0, "") }
+        applyContextHint()
         let bs = uvie_engine_commit_with(engine, Self.asciiByte(boundary), &scratch, Self.bufferCapacity)
         return (bs, String(cString: scratch))
     }
@@ -236,6 +295,37 @@ final class EngineBridge {
     func noteSeparator(_ separator: Character) {
         guard let engine else { return }
         uvie_engine_note_separator(engine, Self.asciiByte(separator))
+    }
+
+    // MARK: - Sentence context
+
+    /// The current sentence so far — its committed words with their
+    /// separators, oldest first — as UTF-8. The composing word is not
+    /// included. A sentence longer than the engine's committed-word ring keeps
+    /// only its newest words.
+    func sentenceText() -> String {
+        guard let engine else { return "" }
+        _ = uvie_engine_sentence_text(engine, &sentenceScratch, Self.sentenceCapacity)
+        return String(cString: sentenceScratch)
+    }
+
+    /// Ask NaturalLanguage which language the sentence is in and hand the
+    /// verdict to the engine right before a commit — the one place a word's
+    /// final rendering is decided (CGEvent path and `AXTextInjector` both
+    /// commit through here). Never per keystroke: the recognizer costs ~1 ms.
+    private func applyContextHint() {
+        guard contextDetectionEnabled else { return }
+        let hint = contextDetector.hint(for: sentenceText(), pendingRaw: "")
+        setContextHint(hint)
+        if Logger.shared.keystrokeTraceEnabled {
+            Logger.shared.keystroke(String(
+                format: "ctx hint=%@ vi=%.2f en=%.2f text=%@",
+                hint.traceName,
+                contextDetector.lastVietnameseProbability,
+                contextDetector.lastEnglishProbability,
+                contextDetector.lastText
+            ))
+        }
     }
 
     /// A separator char right after the newest committed word was deleted.

@@ -145,6 +145,10 @@ func makeEventTap(vietnamese: Bool = true) -> EventTap {
     tap.autoDisableOnNonLatinLayout = false
     tap.fnHotkeyEnabled = false
     tap.customHotkeyEnabled = false
+    // Sentence-language detection is a user setting (default on). Pin it off
+    // so no test depends on the developer's real UserDefaults; the tests that
+    // cover it turn it on explicitly.
+    tap._engine.contextDetectionEnabled = false
     tap.cachedExcludedApps = []
     tap.cachedCompoundApps = []
     tap.cachedChromiumApps = []

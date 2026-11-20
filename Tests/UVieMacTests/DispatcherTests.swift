@@ -1076,6 +1076,53 @@ final class DispatcherTests: XCTestCase {
         XCTAssertEqual(screens, ["hello world", "hello worl", "hello wor", "hello wo"])
     }
 
+    /// A committed word is rendered under the language of the sentence
+    /// BEFORE it: the engine's NaturalLanguage hint is applied at every word
+    /// commit (never per keystroke), so an English sentence restores its
+    /// English words and a Vietnamese one keeps the marks on ambiguous
+    /// words.
+    func test_contextHint_keepsVietnameseWordAfterEnglishNouns() {
+        pinEngineOptions()
+        tap._engine.contextDetectionEnabled = true
+        // "deploy server" alone scores English but is only two words, so the
+        // hint stays auto — the engine's own rules keep "nó".
+        XCTAssertEqual(simulate("deploy server nos "), "deploy server nó |")
+    }
+
+    func test_contextHint_restoresEnglishWordInEnglishSentence() {
+        pinEngineOptions()
+        tap._engine.contextDetectionEnabled = true
+        // "fix the bug " is a three-word English sentence → English hint, so
+        // "cos" is restored instead of rendering "có".
+        XCTAssertEqual(simulate("fix the bug cos "), "fix the bug cos |")
+    }
+
+    func test_contextHint_keepsVietnameseMarksInVietnameseSentence() {
+        pinEngineOptions()
+        tap._engine.contextDetectionEnabled = true
+        // "Tôi thấy " is Vietnamese → "car" keeps "cả".
+        XCTAssertEqual(simulate("Tooi thaays car nhaf "), "Tôi thấy cả nhà |")
+    }
+
+    /// The recognizer must not be fed the ambiguous word's own reading:
+    /// "thí" on screen would score Vietnamese and lock the sentence there.
+    func test_contextHint_englishSentenceStartingWithAmbiguousWord() {
+        pinEngineOptions()
+        tap._engine.contextDetectionEnabled = true
+        XCTAssertEqual(simulate("this is a test "), "this is a test |")
+        XCTAssertEqual(simulate("em nos cos ver ddepj "), "em nó có vẻ đẹp |")
+        XCTAssertEqual(simulate("anh review code cos ver oonr "), "anh review code có vẻ ổn |")
+        XCTAssertEqual(simulate("awware "), "aware |")
+    }
+
+    /// Control: with the setting off the same English sentence keeps the
+    /// Vietnamese rendering of the ambiguous word.
+    func test_contextHintOff_leavesEnglishAmbiguousWordVietnamese() {
+        pinEngineOptions()
+        tap._engine.contextDetectionEnabled = false
+        XCTAssertEqual(simulate("fix the bug cos "), "fix the bug có |")
+    }
+
     /// When the system disables the tap (timeout/user input), keystrokes
     /// reach the app raw. On the re-enable notification the engine state is
     /// stale — it must be dropped or the next keystroke diffs against text
