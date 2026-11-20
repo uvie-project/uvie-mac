@@ -525,6 +525,118 @@ final class DispatcherTests: XCTestCase {
                        "an empty plan must not re-post the space")
     }
 
+    // MARK: - In-flight synthetic delivery (fast typing)
+
+    /// Switches the tap to a sink that models in-flight delivery: synthetic
+    /// posts stay queued until `deliverAll` delivers them, while a key passed
+    /// through natively reaches the app at once - the fast-typing race.
+    private func useInFlightSink() {
+        tap._engine.setEnglishOverride(false)
+        sink = RecordingSink()
+        sink.modelsInFlight = true
+        sink.tap = tap
+        tap.outputSink = sink
+    }
+
+    /// Types `chars` with the real keycode of each key (Space included).
+    private func typeFast(_ chars: String) {
+        for ch in chars {
+            let code: Int64 = ch == " " ? 49 : keyCode(for: ch)
+            assertConsumed(send(tap, .keyDown, keyDownEvent(code, unicode: String(ch))))
+        }
+    }
+
+    /// The reported bug: typing "tieengs" fast and pressing Space before the
+    /// last replace landed put the space INSIDE the word ("tiến g"). A native
+    /// key must never overtake synthetic events that are still in flight.
+    func test_fastTyping_spaceDoesNotOvertakeInFlightReplace() {
+        useInFlightSink()
+        var field = TextFieldModel()
+
+        typeFast("tieengs")
+        XCTAssertFalse(sink.inFlight.isEmpty,
+                       "every keystroke's replace is still in flight")
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(49)),
+                       "the space must queue behind the in-flight replace")
+        // The consumed keyDown's keyUp still passes, so the cycle balances.
+        assertPassed(send(tap, .keyUp, keyUpEvent(49)))
+
+        sink.deliverAll { field.apply($0) }
+        XCTAssertEqual(field.text, "tiếng ")
+    }
+
+    /// Two words typed back to back without a pump: the spaces and the letters
+    /// after them keep their order, so the text reconstructs exactly.
+    func test_fastTyping_twoWords_keepOrder() {
+        useInFlightSink()
+        var field = TextFieldModel()
+
+        typeFast("vieejt nam ")
+        sink.deliverAll { field.apply($0) }
+        XCTAssertEqual(field.text, "việt nam ")
+    }
+
+    /// A letter typed right after a tone key must land after the tone's
+    /// replace, not before it ("tiế" + "n" -> "tiến", never "tiêsn").
+    func test_letterAfterToneKey_keepsOrder() {
+        useInFlightSink()
+        var field = TextFieldModel()
+
+        typeFast("tiees")
+        typeFast("n")
+        sink.deliverAll { field.apply($0) }
+        XCTAssertEqual(field.text, "tiến")
+    }
+
+    /// A Backspace right after a replace used to delete a character of the
+    /// word BEFORE the queued replace/text landed.
+    func test_backspaceAfterReplace_keepsOrder() {
+        useInFlightSink()
+        var field = TextFieldModel()
+
+        typeFast("vieejt")
+        // The space commits and queues behind the in-flight replaces; the
+        // Backspace that follows deletes that space once it has landed.
+        assertConsumed(send(tap, .keyDown, keyDownEvent(49)))
+        assertConsumed(send(tap, .keyDown, keyDownEvent(51)),
+                       "the Backspace must queue behind the space it deletes")
+        sink.deliverAll { field.apply($0) }
+        XCTAssertEqual(field.text, "việt")
+    }
+
+    /// A Return right after a replace used to submit/insert the newline
+    /// before the rewrite arrived (chat apps lost the message).
+    func test_enterAfterReplace_keepsOrder() {
+        useInFlightSink()
+        var field = TextFieldModel()
+
+        typeFast("vieejt")
+        assertConsumed(send(tap, .keyDown, keyDownEvent(36)),
+                       "the Return must queue behind the in-flight replace")
+        sink.deliverAll { field.apply($0) }
+        XCTAssertEqual(field.text, "việt\n")
+    }
+
+    /// A synthetic event the tap never sees return (dropped, tap disabled
+    /// mid-flight) must not keep every key on the re-post path forever.
+    func test_pendingSyntheticCounter_resetsAfterTimeout() {
+        useInFlightSink()
+
+        typeFast("v")
+        XCTAssertEqual(tap.pendingSynthetic, 1)
+
+        // Pretend the post never came back and the 250 ms window elapsed.
+        tap.lastSyntheticPostTime -= 1.0
+        XCTAssertFalse(tap.syntheticEventsInFlight())
+        XCTAssertEqual(tap.pendingSynthetic, 0)
+
+        // The next key passes through natively again.
+        assertPassed(send(tap, .keyDown, keyDownEvent(49)))
+        XCTAssertFalse(sink.calls.contains(.key(49)),
+                       "nothing was re-posted after the counter was reset")
+    }
+
     // MARK: - Post-commit word editing (LabanKey-style)
 
     /// Types `word`, commits it with space, arrows left onto the word end,

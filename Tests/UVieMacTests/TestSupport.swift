@@ -26,44 +26,161 @@ final class RecordingSink: SyntheticOutputSink {
 
     private(set) var calls: [Call] = []
 
+    /// A recorded post the app has not applied yet. `posts` is how many
+    /// synthetic keyDown events the call posted - the unit `pendingSynthetic`
+    /// counts.
+    struct InFlightPost {
+        let call: Call
+        let posts: Int
+    }
+
+    /// Synthetic posts that are still "in the air" (see `modelsInFlight`).
+    private(set) var inFlight: [InFlightPost] = []
+
+    /// When true, a recorded post is not delivered to the app immediately: it
+    /// stays in `inFlight` and raises `tap.pendingSynthetic`, modelling the
+    /// real event stream where a synthetic event reaches the app only after
+    /// the system dispatches it. Off by default, so the existing tests keep
+    /// the "delivered in order, immediately" model.
+    var modelsInFlight = false
+
+    /// The tap whose in-flight counter the recorded posts feed.
+    weak var tap: EventTap?
+
+    /// Clears the recorded calls. In-flight posts are NOT delivered: they are
+    /// still in the air and must be pumped.
     func reset() {
         calls.removeAll()
     }
 
+    /// Records a call and, when in-flight delivery is modelled, queues the
+    /// posts it made. `posts` is approximate for the compound strategies
+    /// (their internal selection/sentinel events are not modelled).
+    private func record(_ call: Call, posts: Int) {
+        calls.append(call)
+        guard modelsInFlight, posts > 0 else { return }
+        inFlight.append(InFlightPost(call: call, posts: posts))
+        tap?.noteSyntheticPosts(posts)
+    }
+
+    /// Delivers every queued post to the app, oldest first: `apply` performs
+    /// the screen edit the app would make, then the tap sees the synthetic
+    /// event come back through it (dropping the in-flight count), exactly as
+    /// in the real event stream.
+    func deliverAll(_ apply: (Call) -> Void) {
+        while !inFlight.isEmpty {
+            let entry = inFlight.removeFirst()
+            apply(entry.call)
+            guard let tap else { continue }
+            for _ in 0..<entry.posts {
+                let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)!
+                event.setIntegerValueField(.eventSourceStateID, value: tap.syntheticTag)
+                send(tap, .keyDown, event)?.release()
+            }
+        }
+    }
+
     func applyCompoundBackspaces(bs: Int, out: String) {
-        calls.append(.compound(bs, out))
+        record(.compound(bs, out), posts: bs + (out.isEmpty ? 0 : 1))
     }
 
     func applyBackspaces(_ count: Int) {
-        calls.append(.backspaces(count))
+        record(.backspaces(count), posts: count)
     }
 
     func applyForwardDeletes(_ count: Int) {
-        calls.append(.forwardDeletes(count))
+        record(.forwardDeletes(count), posts: count)
     }
 
     func applyCompoundForwardDeletes(_ count: Int) {
-        calls.append(.compoundForward(count))
+        record(.compoundForward(count), posts: count + 1)
     }
 
     func applySelectionBackspaces(_ count: Int) {
-        calls.append(.selection(count))
+        record(.selection(count), posts: count)
     }
 
     func applySelectionForwardDeletes(_ count: Int) {
-        calls.append(.selectionForward(count))
+        record(.selectionForward(count), posts: count)
     }
 
     func sendEmptyCharacter() {
-        calls.append(.emptyChar())
+        record(.emptyChar(), posts: 1)
     }
 
     func postText(_ string: String) {
-        calls.append(.text(string))
+        record(.text(string), posts: string.isEmpty ? 0 : 1)
     }
 
     func postKey(keyCode: Int64, flags: CGEventFlags) {
-        calls.append(.key(keyCode, flags))
+        record(.key(keyCode, flags), posts: 1)
+    }
+}
+
+// MARK: - Text field model
+
+/// Minimal single-line text field for the in-flight delivery tests: a
+/// character buffer with a caret that applies the recorded injection calls
+/// and the native edits a passed-through key performs, the same math a real
+/// field does.
+struct TextFieldModel {
+    private(set) var chars: [Character] = []
+    private(set) var caret = 0
+
+    var text: String { String(chars) }
+
+    mutating func insert(_ ch: Character) {
+        chars.insert(ch, at: caret)
+        caret += 1
+    }
+
+    mutating func backspace(_ count: Int) {
+        for _ in 0..<count where caret > 0 {
+            caret -= 1
+            chars.remove(at: caret)
+        }
+    }
+
+    mutating func forwardDelete(_ count: Int) {
+        for _ in 0..<count where caret < chars.count {
+            chars.remove(at: caret)
+        }
+    }
+
+    /// Applies an injection call the way the app receives it.
+    mutating func apply(_ call: RecordingSink.Call) {
+        switch call.method {
+        case "backspaces", "selectionBackspaces":
+            backspace(Int(call.arg) ?? 0)
+        case "compoundBackspaces":
+            let parts = call.arg.split(separator: "|", maxSplits: 1).map(String.init)
+            backspace(Int(parts[0]) ?? 0)
+            if parts.count > 1 { for ch in parts[1] { insert(ch) } }
+        case "forwardDeletes", "compoundForwardDeletes", "selectionForwardDeletes":
+            forwardDelete(Int(call.arg) ?? 0)
+        case "text":
+            for ch in call.arg { insert(ch) }
+        case "key":
+            applyKey(call)
+        default:
+            break
+        }
+    }
+
+    /// A re-posted key behaves like the real one: Backspace/Forward Delete
+    /// delete, Return/Tab/Space insert, arrows and Home/End move the caret.
+    private mutating func applyKey(_ call: RecordingSink.Call) {
+        let raw = call.arg.split(separator: "|", maxSplits: 1).first.map(String.init) ?? call.arg
+        switch Int64(raw) ?? 0 {
+        case 51: backspace(1)
+        case 117: forwardDelete(1)
+        case 36, 76: insert("\n")
+        case 48: insert("\t")
+        case 49: insert(" ")
+        case 123, 115: caret = max(0, caret - 1)
+        case 124, 119: caret = min(chars.count, caret + 1)
+        default: break
+        }
     }
 }
 

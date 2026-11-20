@@ -105,6 +105,29 @@ final class EventTap: ObservableObject {
     /// Entries are removed as the matching keyUp arrives.
     var passedThroughKeys = Set<Int64>()
 
+    /// Number of synthetic keyDown events this tap has posted that have not
+    /// come back through it yet. Every post targets `.cgSessionEventTap` - the
+    /// same location the tap is head-inserted at - so the tap observes its own
+    /// events (the `syntheticTag` check in `handle` proves it) and counts them
+    /// down as they return. While the count is non-zero the app has not
+    /// applied the newest replace yet, so a key passed through natively would
+    /// reach it FIRST and land in the middle of the rewrite: fast typing glued
+    /// letters and the Space ended up inside the word ("tieengs " ->
+    /// "tiến g"). Such keys are consumed and re-posted behind the queue
+    /// instead - see `repostWhileSyntheticPending`.
+    var pendingSynthetic = 0
+
+    /// Time of the most recent synthetic post - the safety valve for
+    /// `pendingSynthetic`. A post the tap never sees return (dropped event,
+    /// busy app, tap disabled mid-flight) must not leave typing stuck on the
+    /// re-post path forever.
+    var lastSyntheticPostTime: CFAbsoluteTime = 0
+
+    /// How long after the last post an unseen synthetic event is presumed
+    /// lost. Well above the dispatch latency of a healthy session, small
+    /// enough that a lost event costs at most one keystroke of ordering.
+    static let pendingSyntheticTimeout: CFAbsoluteTime = 0.25
+
     /// Remaining one-shot AX bundleID refresh attempts. Armed (set to
     /// `axRefreshMaxAttempts`) when a potential app-switch trigger is
     /// observed (Cmd/Ctrl/Fn flagsChanged, mouse down). Each keyDown in an
@@ -368,6 +391,10 @@ final class EventTap: ObservableObject {
         tap = nil
         runLoopSource = nil
         tapRunLoop = nil
+        // Events posted by the tap can no longer be observed coming back, so
+        // the in-flight count can never drain. Drop it rather than waiting for
+        // the safety valve after a restart.
+        pendingSynthetic = 0
         appDetector.stop()
         Logger.shared.info("EventTap.stop: tap released")
     }

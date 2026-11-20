@@ -20,6 +20,31 @@ protocol SyntheticOutputSink: AnyObject {
 extension EventTap: SyntheticOutputSink {}
 
 extension EventTap {
+    // MARK: - In-flight bookkeeping
+
+    /// Record `count` synthetic keyDown posts. Called by every helper that
+    /// posts an event the app acts on, so `handle` can tell whether a rewrite
+    /// is still in flight when the next real key arrives. Warm-up phantoms
+    /// and `releaseSyntheticModifiers` are keyUps and are NOT counted (only
+    /// keyDowns come back through the tap as text/deletion events).
+    func noteSyntheticPosts(_ count: Int) {
+        guard count > 0 else { return }
+        pendingSynthetic += count
+        lastSyntheticPostTime = CFAbsoluteTimeGetCurrent()
+    }
+
+    /// True while a synthetic post may still be in flight. Clears the count
+    /// when the newest post is older than `pendingSyntheticTimeout`, so a lost
+    /// event (or a tap that was disabled mid-flight) can never keep native
+    /// keys on the re-post path.
+    func syntheticEventsInFlight() -> Bool {
+        if pendingSynthetic > 0,
+           CFAbsoluteTimeGetCurrent() - lastSyntheticPostTime > Self.pendingSyntheticTimeout {
+            pendingSynthetic = 0
+        }
+        return pendingSynthetic > 0
+    }
+
     /// Send backspaces for compound apps (Safari, Notes, Chrome, Comet, Atlas, etc.).
     ///
     /// Strategy:
@@ -90,6 +115,7 @@ extension EventTap {
     func applyForwardDeletes(_ count: Int) {
         guard let eventSource, count > 0 else { return }
         perfNoteEvent(count)
+        noteSyntheticPosts(count)
         for _ in 0..<count {
             let down = CGEvent(keyboardEventSource: eventSource, virtualKey: 117, keyDown: true)
             down?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
@@ -105,6 +131,7 @@ extension EventTap {
     func applySelectionForwardDeletes(_ count: Int) {
         guard let eventSource, count > 0 else { return }
         perfNoteEvent(count)
+        noteSyntheticPosts(count)
         for _ in 0..<count {
             let down = CGEvent(keyboardEventSource: eventSource, virtualKey: 124, keyDown: true)
             down?.flags = .maskShift
@@ -129,7 +156,9 @@ extension EventTap {
     ///   if delivered late or out of order.
     /// - a bare Cmd keyDown+keyUp pair with no other key in between produces
     ///   no character and leaves no modifier state behind.
-    /// All events are tagged with `syntheticTag` so this tap skips them.
+    /// All events are tagged with `syntheticTag` so this tap skips them, and
+    /// none of them are counted as in-flight posts (`noteSyntheticPosts`):
+    /// they are phantoms, not text or deletion events.
     func warmUpSyntheticKeycodePath() {
         guard let eventSource else { return }
         func post(_ event: CGEvent?, flags: CGEventFlags) {
@@ -167,6 +196,7 @@ extension EventTap {
     func applyBackspaces(_ count: Int) {
         guard let eventSource, count > 0 else { return }
         perfNoteEvent(count)
+        noteSyntheticPosts(count)
         for _ in 0..<count {
             let down = CGEvent(keyboardEventSource: eventSource, virtualKey: 51, keyDown: true)
             down?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
@@ -178,6 +208,8 @@ extension EventTap {
     /// ending a Shift+arrow selection on a Shift-tagged event left Shift
     /// latched for every process until the next real key press. Post an
     /// unmodified phantom keyUp to clear it.
+    ///
+    /// A keyUp, so it is not counted as an in-flight post.
     func releaseSyntheticModifiers() {
         guard let eventSource else { return }
         let release = CGEvent(keyboardEventSource: eventSource, virtualKey: 123, keyDown: false)
@@ -193,6 +225,7 @@ extension EventTap {
     func applySelectionBackspaces(_ count: Int) {
         guard let eventSource, count > 0 else { return }
         perfNoteEvent(count)
+        noteSyntheticPosts(count)
         for _ in 0..<count {
             let down = CGEvent(keyboardEventSource: eventSource, virtualKey: 123, keyDown: true)
             down?.flags = .maskShift
@@ -208,6 +241,7 @@ extension EventTap {
     func sendEmptyCharacter() {
         guard let eventSource else { return }
         perfNoteEvent(1)
+        noteSyntheticPosts(1)
         let emptyChar: UniChar = 0x202F
         let down = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: true)
         down?.setIntegerValueField(.eventSourceStateID, value: syntheticTag)
@@ -220,6 +254,7 @@ extension EventTap {
         perfNoteEvent(1)
         let utf16 = Array(string.utf16)
         guard !utf16.isEmpty else { return }
+        noteSyntheticPosts(1)
         // Only post keyDown — apps render text on keyDown; the synthetic keyUp
         // is unnecessary for text input and doubles the event count, amplifying
         // the backspace-then-insert flicker on every diff replace.
@@ -238,6 +273,7 @@ extension EventTap {
     func postKey(keyCode: Int64, flags: CGEventFlags) {
         guard let eventSource else { return }
         perfNoteEvent(1)
+        noteSyntheticPosts(1)
         let down = CGEvent(
             keyboardEventSource: eventSource,
             virtualKey: CGKeyCode(clamping: keyCode),

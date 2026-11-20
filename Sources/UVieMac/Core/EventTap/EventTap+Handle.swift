@@ -38,11 +38,22 @@ extension EventTap {
             // matching keyUps may never arrive (or arrive for keys the app
             // never saw). Forget them so a later keyDown starts clean.
             passedThroughKeys.removeAll()
+            // Synthetic events posted before the disable may never be observed
+            // coming back either - drop the in-flight count so typing is not
+            // stuck on the re-post path waiting for them.
+            pendingSynthetic = 0
             return Unmanaged.passRetained(event)
         }
 
-        // Skip our own synthetic events
+        // Skip our own synthetic events. Each posted keyDown comes back
+        // through the tap once the system dispatches it, so this is also where
+        // the in-flight count drains (`pendingSynthetic`). Only keyDowns are
+        // counted: warm-up phantoms and `releaseSyntheticModifiers` post
+        // keyUps, which never carry text or deletions.
         if event.getIntegerValueField(.eventSourceStateID) == syntheticTag {
+            if type == .keyDown, pendingSynthetic > 0 {
+                pendingSynthetic -= 1
+            }
             return Unmanaged.passRetained(event)
         }
 
@@ -248,6 +259,12 @@ extension EventTap {
             } else {
                 editCaretBack += keyCode == 123 ? 1 : -1
             }
+            // A caret step applied before an in-flight replace lands at the
+            // wrong position, so queue it behind the replace.
+            if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: flags, event: event) {
+                perfEnd("break-arrow-repost", keyCode: keyCode, app: app)
+                return nil
+            }
             perfEnd("break-arrow", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
         }
@@ -333,8 +350,16 @@ extension EventTap {
         // above) — Spotlight doesn't fire didActivateApplicationNotification,
         // so without that arming the bundleID stays stale as the previous app
         // and AX mode never activates.
+        // A caret-moving chord (Cmd/Option/Fn+Arrow, Home/End, PageUp/Down) is
+        // queued behind any in-flight replace: applied first, it moved the
+        // caret the replace was computed for. Other chords (Cmd+C, Cmd+Tab,
+        // app shortcuts) still pass natively.
         if (flags.contains(.maskCommand) || flags.contains(.maskControl) ||
            flags.contains(.maskAlternate) || flags.contains(.maskSecondaryFn)) && !isOptionBackspace {
+            if isCursorMovementKey(keyCode),
+               repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: flags, event: event) {
+                return nil
+            }
             return Unmanaged.passRetained(event)
         }
 
@@ -370,6 +395,10 @@ extension EventTap {
             _engine.reset()
             editCaretBack = 0
             // Pass through when non-Latin layout is active (CJK, Cyrillic, etc.)
+            // A text key still has to queue behind an in-flight replace.
+            if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: flags, event: event) {
+                return nil
+            }
             return Unmanaged.passRetained(event)
         }
 
@@ -415,6 +444,52 @@ extension EventTap {
         return handleCharacterKey(type: type, keyCode: keyCode, app: app, event: event)
     }
 
+    // MARK: - In-flight synthetic ordering
+
+    /// True for a keyDown that inserts or deletes text, or moves the caret, in
+    /// the app when handled natively. Those are the keys whose native delivery
+    /// can overtake a synthetic replace that is still in flight.
+    private func isTextOrCaretKey(keyCode: Int64, event: CGEvent) -> Bool {
+        switch keyCode {
+        case 51, 117: // Backspace, Forward Delete
+            return true
+        case 36, 76, 48, 49: // Enter, keypad Enter, Tab, Space
+            return true
+        default:
+            break
+        }
+        // Arrows, Home/End, PageUp/PageDown: a caret move applied before the
+        // replace puts the following keystrokes at the wrong position.
+        if isCursorMovementKey(keyCode) { return true }
+        // Printable keys (letters, digits, punctuation) type text. Function
+        // keys translate to private-use unicode and are not text.
+        guard let glyph = characterFromCGEvent(event) else { return false }
+        return isTextGlyph(glyph)
+    }
+
+    /// Pass the event through natively - unless synthetic events are still in
+    /// flight, in which case the app would apply this key BEFORE them. The
+    /// native key then lands in the middle of the pending rewrite: fast typing
+    /// glued letters and the Space ended up inside the word ("tieengs " ->
+    /// "tiến g"), and a Return submitted a chat message before the rewrite
+    /// arrived. The key is consumed and re-posted through the same synthetic
+    /// path (same keycode and flags, same tap location), so it queues behind
+    /// the in-flight events and the order is FIFO again.
+    /// Returns true when the caller must consume the real event. Engine state
+    /// handling for the key is untouched - only its delivery changes.
+    private func repostWhileSyntheticPending(
+        type: CGEventType,
+        keyCode: Int64,
+        flags: CGEventFlags,
+        event: CGEvent
+    ) -> Bool {
+        guard type == .keyDown,
+              syntheticEventsInFlight(),
+              isTextOrCaretKey(keyCode: keyCode, event: event) else { return false }
+        outputSink.postKey(keyCode: keyCode, flags: flags)
+        return true
+    }
+
     // MARK: - Backspace handler
 
     private func handleBackspace(type: CGEventType, keyCode: Int64, isOptionBackspace: Bool, app: String, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -433,6 +508,12 @@ extension EventTap {
             _engine.reset()
             editCaretBack = 0
             // Pass through to let OS handle the word deletion
+            // (queued behind any in-flight replace: a word delete applied
+            // first would eat text the replace was computed against).
+            if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: event.flags, event: event) {
+                perfEnd("backspace-option-repost", keyCode: keyCode, app: app)
+                return nil
+            }
             perfEnd("backspace-option", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
         }
@@ -453,6 +534,10 @@ extension EventTap {
                     // delete + retype racing the key repeat). The word stays
                     // editable — the engine reports the caret offset to adopt.
                     editCaretBack = _engine.lastCaretBack
+                    if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: event.flags, event: event) {
+                        perfEnd("backspace-at-repost", keyCode: keyCode, app: app)
+                        return nil
+                    }
                     perfEnd("backspace-at", keyCode: keyCode, app: app)
                     return Unmanaged.passRetained(event)
                 }
@@ -469,6 +554,12 @@ extension EventTap {
             } else {
                 _engine.reset()
                 editCaretBack = 0
+            }
+            // The delete is the app's job; queue it behind an in-flight
+            // replace so it does not eat the chars the replace still owns.
+            if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: event.flags, event: event) {
+                perfEnd("backspace-os-repost", keyCode: keyCode, app: app)
+                return nil
             }
             perfEnd("backspace-os", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
@@ -505,6 +596,10 @@ extension EventTap {
             } else {
                 _engine.reset()
                 editCaretBack = 0
+            }
+            if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: event.flags, event: event) {
+                perfEnd("backspace-drain-repost", keyCode: keyCode, app: app)
+                return nil
             }
             perfEnd("backspace-os", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
@@ -570,6 +665,13 @@ extension EventTap {
                 perfEnd("space-consumed", keyCode: keyCode, app: app)
                 return nil
             }
+            // Empty plan: the space normally lands natively, but a replace
+            // from the last letter may still be in flight - passing the space
+            // through put it INSIDE the word ("tieengs " -> "tiến g").
+            if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: event.flags, event: event) {
+                perfEnd("space-repost", keyCode: keyCode, app: app)
+                return nil
+            }
         }
         perfEnd("space", keyCode: keyCode, app: app)
         return Unmanaged.passRetained(event)
@@ -620,6 +722,12 @@ extension EventTap {
                 _engine.reset()
                 editCaretBack = 0
                 invalidateWebContentCache()
+                // A caret jump or Tab applied before an in-flight replace
+                // lands at the wrong position / in the wrong field.
+                if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: event.flags, event: event) {
+                    perfEnd("break-arrow-repost", keyCode: keyCode, app: app)
+                    return nil
+                }
                 perfEnd("break-arrow", keyCode: keyCode, app: app)
                 return Unmanaged.passRetained(event)
             }
@@ -743,6 +851,13 @@ extension EventTap {
                 perfEnd("break-consumed", keyCode: keyCode, app: app)
                 return nil
             }
+            // Empty plan: the Return/Tab normally lands natively, but it must
+            // not overtake a replace still in flight (a chat app submitted the
+            // message before the rewrite arrived).
+            if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: event.flags, event: event) {
+                perfEnd("break-repost", keyCode: keyCode, app: app)
+                return nil
+            }
         }
         perfEnd("break", keyCode: keyCode, app: app)
         return Unmanaged.passRetained(event)
@@ -831,6 +946,12 @@ extension EventTap {
             editCaretBack = 0
             invalidateWebContentCache()
             updateSentenceStartState(after: glyph)
+            // The app inserts the glyph natively - queue it behind any
+            // in-flight replace so it cannot land in the middle of one.
+            if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: event.flags, event: event) {
+                perfEnd("char-nonascii-repost", keyCode: keyCode, app: app)
+                return nil
+            }
             perfEnd("char-nonascii", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
         }
@@ -876,6 +997,12 @@ extension EventTap {
             updateSentenceStartState(after: firstChar)
             if consumed {
                 perfEnd("char-punct", keyCode: keyCode, app: app)
+                return nil
+            }
+            // Empty plan: the punctuation normally lands natively, but a
+            // replace from the last letter may still be in flight.
+            if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: event.flags, event: event) {
+                perfEnd("char-punct-repost", keyCode: keyCode, app: app)
                 return nil
             }
             passedThroughKeys.insert(keyCode)
@@ -966,6 +1093,12 @@ extension EventTap {
         // it (the exact failure the non-ASCII guard above prevents). Let the
         // app handle the key natively instead. Mirrors `AXTextInjector.feed`.
         if bs == 0 && out.isEmpty && !_engine.isComposing {
+            // The app types the char itself - queue it behind any in-flight
+            // replace instead of letting it overtake one.
+            if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: event.flags, event: event) {
+                perfEnd("char-unhandled-repost", keyCode: keyCode, app: app)
+                return nil
+            }
             passedThroughKeys.insert(keyCode)
             perfEnd("char-unhandled", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
@@ -1039,6 +1172,12 @@ extension EventTap {
         // Vietnamese mid-sentence.
         if keyCode == 51 || keyCode == 49 || isBreakKey(keyCode) {
             if type == .keyDown { updateSentenceStartStateForBreakKey(keyCode) }
+            // English mode re-posts every character synthetically, so a
+            // space/backspace/Return pressed right after one is in the same
+            // race: queue it behind the in-flight posts.
+            if repostWhileSyntheticPending(type: type, keyCode: keyCode, flags: event.flags, event: event) {
+                return nil
+            }
             return Unmanaged.passRetained(event)
         }
 
