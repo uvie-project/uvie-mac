@@ -24,6 +24,23 @@ extension EventTap {
             return Unmanaged.passRetained(event)
         }
 
+        // The engine only understands ASCII keystrokes. A non-ASCII character
+        // (an accented letter on a Latin layout, Cyrillic/Greek/Arabic, a
+        // combining sequence) produces no engine output, and consuming the
+        // event would post nothing — the key looked dead while the trace log
+        // still showed it arriving. Commit what is composing, drop the
+        // composition and let the app insert the character natively (mirrors
+        // the CGEvent path's guard in `handleCharacterKey`). Function keys
+        // translate to private-use unicode and are not text.
+        if let glyph = characterFromCGEvent(event), isTextGlyph(glyph), glyph.asciiValue == nil {
+            if type == .keyDown {
+                axInjector.commit(boundary: "\0")
+                axInjector.reset()
+                editCaretBack = 0
+            }
+            return Unmanaged.passRetained(event)
+        }
+
         // Backspace
         if keyCode == 51 {
             if type == .keyUp {
@@ -107,7 +124,12 @@ extension EventTap {
         // reached the engine lowercase and the render lost it ("Ddawsk" →
         // "đắk" instead of "Đắk"). Real hardware always carries the resolved
         // character, so this only ever restores the capital.
-        if let char, char.isASCII, char.isLowercase, event.flags.contains(.maskShift) {
+        //
+        // CapsLock inverts the Shift meaning (Shift yields a lowercase char),
+        // so the heuristic must stay out of that case: the delivered "a" is
+        // already what the user asked for.
+        if let char, char.isASCII, char.isLowercase,
+           event.flags.contains(.maskShift), !event.flags.contains(.maskAlphaShift) {
             return char.uppercased().first ?? char
         }
         return char

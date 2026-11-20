@@ -1,4 +1,5 @@
 import Cocoa
+import Carbon
 
 // MARK: - EventTap - Main event dispatcher
 
@@ -33,11 +34,26 @@ extension EventTap {
             _engine.reset()
             editCaretBack = 0
             invalidateWebContentCache()
+            // Key cycles in flight were interrupted by the disable — the
+            // matching keyUps may never arrive (or arrive for keys the app
+            // never saw). Forget them so a later keyDown starts clean.
+            passedThroughKeys.removeAll()
             return Unmanaged.passRetained(event)
         }
 
         // Skip our own synthetic events
         if event.getIntegerValueField(.eventSourceStateID) == syntheticTag {
+            return Unmanaged.passRetained(event)
+        }
+
+        // Secure input (password fields, Terminal → Secure Keyboard Entry):
+        // the system drops synthetic events, so consuming a key and posting a
+        // replacement makes the field look dead (every ASCII key vanishes).
+        // Pass everything through untouched and drop the composition — the
+        // text behind the engine's back changed without it seeing it.
+        if IsSecureEventInputEnabled() {
+            _engine.reset()
+            editCaretBack = 0
             return Unmanaged.passRetained(event)
         }
 
@@ -55,6 +71,9 @@ extension EventTap {
                 _engine.reset()
                 editCaretBack = 0
                 invalidateWebContentCache()
+                // Focus is leaving the app; any key cycle still tracked
+                // belongs to it and its keyUp will not come through here.
+                passedThroughKeys.removeAll()
                 lastExcludedState = true
             }
             return Unmanaged.passRetained(event)
@@ -105,6 +124,10 @@ extension EventTap {
             // A click while the modifier chord is held (e.g. shift-click
             // selection) is not a chord tap — disarm.
             customChordTapArmed = false
+            // Same for a click while Fn is held: Fn+click is not a bare Fn
+            // tap (the release used to fire the language toggle).
+            fnIsDown = false
+            fnWasTap = false
             if type == .leftMouseDown || type == .rightMouseDown {
                 savedIsAtSentenceStart = isAtSentenceStart
             }
@@ -178,6 +201,8 @@ extension EventTap {
                 editCaretBack = 0
                 invalidateWebContentCache()
                 customChordTapArmed = false
+                // The keys in flight belong to the app we just left.
+                passedThroughKeys.removeAll()
                 handleSentenceStartAcrossAppSwitch(to: fresh)
             } else {
                 axRefreshAttempts -= 1
@@ -278,19 +303,25 @@ extension EventTap {
 
         // Text the engine never saw desyncs the composing word: the next diff
         // backspaces into it and eats it. Paste/cut/undo (Cmd/Ctrl+V/X/Z)
-        // insert or remove text behind the engine's back, and an Option
+        // insert or remove text behind the engine's back, an Option
         // combination that types a glyph (a dead key: Option+E → ´) does the
-        // same. Observed: "vie" + Cmd+V + "ts" deleted two pasted characters;
-        // "vie" + Option+E + "ts" deleted the ´. Drop the composition state
-        // before those keys reach the app: the rendered word stays on screen
-        // and simply stops being editable (same as a mouse click).
+        // same, and so does every other Cmd/Ctrl chord: a focus change
+        // (Cmd+` / Cmd+Tab / Ctrl+Tab / Cmd+1..9), a readline binding
+        // (Ctrl+W/K/U/E/Y/T/D) or an app command moves the caret to another
+        // window, tab or line the tap cannot track. Observed: "vie" + Cmd+`
+        // + "t" deleted two characters of the NEW window's text. Drop the
+        // composition state before those keys reach the app: the rendered
+        // word stays on screen and simply stops being editable (same as a
+        // mouse click). Cmd+C / Ctrl+C (keyCode 8) copies and changes nothing,
+        // and the language-toggle hotkey was already consumed by
+        // `handleHotkey` above (its toggle resets the engine itself).
         if type == .keyDown && !isOptionBackspace {
-            let isEditCommand = (flags.contains(.maskCommand) || flags.contains(.maskControl))
-                && (keyCode == 9 || keyCode == 7 || keyCode == 6) // V paste, X cut, Z undo
+            let isModifierCommand = (flags.contains(.maskCommand) || flags.contains(.maskControl))
+                && keyCode != 8 // C copy
             let isOptionGlyph = flags.contains(.maskAlternate)
                 && !flags.contains(.maskCommand) && !flags.contains(.maskControl)
                 && isTextGlyph(characterFromCGEvent(event))
-            if isEditCommand || isOptionGlyph {
+            if isModifierCommand || isOptionGlyph {
                 _engine.reset()
                 editCaretBack = 0
                 invalidateWebContentCache()
@@ -344,6 +375,18 @@ extension EventTap {
 
         // --- AX mode (Spotlight, etc.) ---
         if isAXApp {
+            // Option+Backspace deletes a whole word at the OS level, which the
+            // engine cannot observe. The CGEvent path resets in
+            // `handleBackspace`; AX mode used to AX-delete a single char, so
+            // reset here and let the OS do the word deletion.
+            if isOptionBackspace {
+                if type == .keyDown {
+                    _engine.reset()
+                    axInjector.reset()
+                    editCaretBack = 0
+                }
+                return Unmanaged.passRetained(event)
+            }
             // Kept at info level: the AX path is the fragile one (macOS moves
             // Spotlight's host process), and this is the line that shows which
             // path handled a keystroke in `log show`.
@@ -415,10 +458,13 @@ extension EventTap {
                 }
                 _engine.reset()
                 editCaretBack = 0
-            } else if _engine.removeSeparator() {
+            } else if -editCaretBack <= _engine.trailingGap, _engine.removeSeparator() {
                 // The deleted char was one of the separators after the newest
                 // word: the ring stays valid and deleting the last one lands
-                // the caret on the word end (edit-armed).
+                // the caret on the word end (edit-armed). Only a caret INSIDE
+                // the tracked gap can have deleted one of its chars — a caret
+                // further right deleted untracked text, and consuming the
+                // separator then would desync the ring geometry.
                 editCaretBack += 1
             } else {
                 _engine.reset()
@@ -452,9 +498,13 @@ extension EventTap {
             if editCaretBack >= 0 {
                 _engine.reset()
                 editCaretBack = 0
-            } else {
-                _engine.removeSeparator()
+            } else if -editCaretBack <= _engine.trailingGap, _engine.removeSeparator() {
+                // Same geometry rule as the idle branch: only a caret inside
+                // the tracked gap can have deleted one of its separators.
                 editCaretBack += 1
+            } else {
+                _engine.reset()
+                editCaretBack = 0
             }
             perfEnd("backspace-os", keyCode: keyCode, app: app)
             return Unmanaged.passRetained(event)
@@ -675,8 +725,16 @@ extension EventTap {
                 // The anchor moves to the just-committed word's end. When the
                 // engine was composing, the caret sits 1 right of it (the
                 // break char); when idle, the caret keeps its offset and
-                // moves 1 further right past the inserted break char.
-                afterWordBreak(wasComposing: wasComposing, separator: separator)
+                // moves 1 further right past the inserted break char. A key
+                // with no char (Help, `"\0"`) inserts nothing on screen, so
+                // noting a separator would add a phantom gap char the ring
+                // could never account for — the caret just stays on the word
+                // end.
+                if separator != "\0" {
+                    afterWordBreak(wasComposing: wasComposing, separator: separator)
+                } else {
+                    editCaretBack = 0
+                }
             }
 
             // Enter/Return starts a new sentence
@@ -730,7 +788,7 @@ extension EventTap {
     /// True for a glyph that types text. Function keys and other
     /// non-printing keys translate to private-use unicode (0xF700-0xF8FF) and
     /// are not text; neither is a failed translation (`nil`).
-    private func isTextGlyph(_ glyph: Character?) -> Bool {
+    func isTextGlyph(_ glyph: Character?) -> Bool {
         guard let scalar = glyph?.unicodeScalars.first else { return false }
         return !(0xF700...0xF8FF).contains(scalar.value)
     }

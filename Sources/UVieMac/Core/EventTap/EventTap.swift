@@ -506,6 +506,9 @@ final class EventTap: ObservableObject {
             self.fnWasTap = false
             // Same for the modifier-only chord tap.
             self.customChordTapArmed = false
+            // Key cycles tracked for the app we just left are over — their
+            // keyUps belong to another window (or will never arrive).
+            self.passedThroughKeys.removeAll()
             // Focus moved to a different app — the web-content cache is stale.
             self.invalidateWebContentCache()
             self.updateExcludedTapState()
@@ -603,6 +606,10 @@ final class EventTap: ObservableObject {
         let excluded = cachedExcludedApps.contains(bundleID)
         if excluded != lastExcludedState {
             lastExcludedState = excluded
+            // The tap is disabled/re-enabled here, so any key cycle still
+            // marked as passed-through was interrupted: forget it rather than
+            // letting a stale entry suppress a later key's keyUp.
+            passedThroughKeys.removeAll()
             if let tap {
                 CGEvent.tapEnable(tap: tap, enable: !excluded)
                 Logger.shared.info("EventTap: \(excluded ? "disabled" : "enabled") for app \(bundleID)")

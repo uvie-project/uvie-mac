@@ -260,7 +260,24 @@ final class AXTextInjector {
                 return true
             }
         }
-        _ = engine.commitWith(boundary: boundary)
+        let previous = engine.currentOutput()
+        let (bs, out) = engine.commitWith(boundary: boundary)
+        // Apply the commit diff exactly like `feed`/`backspace`: the English
+        // restore and the code-identifier rule rewrite the word AT commit
+        // time ("lă" → "law", "UVIE_RS_DIR_"), and discarding the diff left
+        // the transformed text in the field. The boundary key itself still
+        // passes through (the app inserts the separator natively), so the
+        // return value stays false.
+        if bs > 0 || !out.isEmpty {
+            let written = getFocusedTextElement().map {
+                inject(bs: bs, out: out, element: $0, previous: previous)
+            } ?? false
+            if !written {
+                // The rewrite could not be written: the field keeps the
+                // un-restored word, so the composition must not stay live.
+                engine.reset()
+            }
+        }
         return false
     }
 

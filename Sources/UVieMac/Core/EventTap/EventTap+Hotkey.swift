@@ -78,8 +78,12 @@ extension EventTap {
             }
         }
 
-        // Any real keypress while Fn is held cancels the tap.
-        if (type == .keyDown || type == .keyUp) && fnIsDown && keyCode != 179 {
+        // Any real keypress cancels the tap — Fn+key is a system/app shortcut,
+        // not a bare Fn tap. This must not require `fnIsDown`: media keys and
+        // other chords can arrive as key events without the Fn press having
+        // been tracked (the tap was re-enabled, a flagsChanged was missed),
+        // and a stale `fnWasTap` then toggled the language on the Fn release.
+        if (type == .keyDown || type == .keyUp) && keyCode != 179 {
             fnWasTap = false
         }
 

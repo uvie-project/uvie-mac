@@ -54,7 +54,14 @@ private struct WindowAccessor: NSViewRepresentable {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private var menuBar: MenuBarController?
-    private let memory = MemoryManager()
+    /// Lazy: `MemoryManager.init` reads the `smartSwitchKey` enabled flag, and
+    /// the factory defaults are only registered in
+    /// `applicationDidFinishLaunching`. Building it at `AppDelegate` init read
+    /// the key before registration → `isEnabled == false` on a fresh install,
+    /// so per-app language memory was dead until the first settings change.
+    /// The first access comes from `inputMethodManager` (also lazy) after the
+    /// registration ran.
+    private lazy var memory = MemoryManager()
     private lazy var inputMethodManager = InputMethodManager(memory: memory)
     private lazy var eventTap = EventTap(inputMethodManager: inputMethodManager)
     private let updateChecker = UpdateChecker.shared

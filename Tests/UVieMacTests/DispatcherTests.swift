@@ -78,6 +78,16 @@ final class DispatcherTests: XCTestCase {
         XCTAssertEqual(sink.calls, [.text("A")])
     }
 
+    /// CapsLock inverts Shift (Shift yields a lowercase char). The synthetic
+    /// event fixup that restores a capital for an unshifted unicode payload
+    /// must not fire then — the delivered "a" is what the user asked for.
+    func test_capsLockShift_typesLowercase() {
+        let event = keyDownEvent(0, flags: [.maskShift, .maskAlphaShift], unicode: "a")
+        assertConsumed(send(tap, .keyDown, event))
+        XCTAssertEqual(sink.calls, [.text("a")])
+        XCTAssertEqual(tap._engine.currentOutput(), "a")
+    }
+
     // MARK: - Non-ASCII keys (regression: keys must never be swallowed)
 
     /// The engine only understands ASCII. A non-ASCII character (Cyrillic,
@@ -561,6 +571,33 @@ final class DispatcherTests: XCTestCase {
         XCTAssertEqual(sink.calls, [.backspaces(2), .text("ón")])
     }
 
+    /// A Backspace only deletes one of the tracked separators when the caret
+    /// sits INSIDE the tracked gap. Two Right arrows push the caret past it
+    /// (the caret did not move on screen — it was already at the line end), so
+    /// the deleted char is untracked: consuming the separator there left the
+    /// ring claiming a gap char that is not on screen.
+    func test_backspaceRightOfTrackedGap_doesNotConsumeSeparator() {
+        for ch in "don" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        assertPassed(send(tap, .keyDown, keyDownEvent(49)))   // space → gap 1, offset -1
+        XCTAssertEqual(tap._engine.trailingGap, 1)
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(124)))  // right → -2
+        assertPassed(send(tap, .keyDown, keyDownEvent(124)))  // right → -3
+        XCTAssertEqual(tap.editCaretBack, -3)
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(51)))   // backspace
+        // The untracked delete drops the history instead of eating a separator
+        // the caret was never next to (old code left offset -2, gap 0).
+        XCTAssertEqual(tap.editCaretBack, 0)
+        XCTAssertEqual(tap._engine.trailingGap, 0, "the ring must be dropped, not shrunk")
+
+        sink.reset()
+        assertConsumed(send(tap, .keyDown, keyDownEvent(1, unicode: "s")))
+        XCTAssertEqual(sink.calls, [.text("s")], "no ghost edit at the untracked caret")
+    }
+
     func test_editCommittedWord_midWordCaretEdits() {
         for ch in "don" {
             assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
@@ -764,6 +801,21 @@ final class DispatcherTests: XCTestCase {
         assertPassed(send(tap, .keyDown, keyDownEvent(76)))
         XCTAssertFalse(tap._engine.isComposing)
         XCTAssertTrue(tap.isAtSentenceStart)
+    }
+
+    /// Help/Insert (keyCode 114) has no character, so it inserts nothing on
+    /// screen. Noting a `"\0"` separator recorded a phantom gap char the ring
+    /// could never account for: the next Backspace/typing was off by one.
+    func test_helpKey_recordsNoPhantomSeparator() {
+        for ch in "don" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        XCTAssertTrue(tap._engine.isComposing)
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(114)))
+        XCTAssertFalse(tap._engine.isComposing)
+        XCTAssertEqual(tap.editCaretBack, 0, "the caret sits on the word end")
+        XCTAssertEqual(tap._engine.trailingGap, 0, "no char was inserted — no separator may be noted")
     }
 
     /// Forward Delete removes the char right of the caret without moving it.
@@ -1067,6 +1119,30 @@ final class DispatcherTests: XCTestCase {
         assertConsumed(send(tap, .keyUp, keyUpEvent(9, unicode: "v")))
     }
 
+    /// A stale passed-through entry (its keyUp was lost to a tap disable, an
+    /// excluded app or an app switch) must not make a later CONSUMED key's
+    /// keyUp pass through — the app would see a release for a keyDown it never
+    /// got. The set is scoped to the current key cycle.
+    func test_tapDisabled_clearsPassedThroughKeys() {
+        tap.passedThroughKeys.insert(0)
+        let disabled = CGEventType(rawValue: 0xFFFFFFFE)!
+        assertPassed(send(tap, disabled, keyDownEvent(0, unicode: "v")))
+        XCTAssertTrue(tap.passedThroughKeys.isEmpty)
+
+        // The key is consumed again, so its keyUp is suppressed.
+        assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: "a")))
+        assertConsumed(send(tap, .keyUp, keyUpEvent(0, unicode: "a")))
+    }
+
+    func test_excludedAppSwitch_clearsPassedThroughKeys() {
+        tap.passedThroughKeys.insert(9)
+        tap.cachedExcludedApps = ["com.test.excluded"]
+        detector.bundleID = "com.test.excluded"
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(9, unicode: "v")))
+        XCTAssertTrue(tap.passedThroughKeys.isEmpty)
+    }
+
     /// Maps a character to its mac virtual keycode so the event routes like
     /// a real keystroke (ASCII values collide with break keys: 't'=116 is
     /// PageUp, 'u'=117 Forward Delete, 'w'=119 End, 'y'=121 PageDown).
@@ -1095,6 +1171,74 @@ final class DispatcherTests: XCTestCase {
 
         assertPassed(send(tap, .keyDown, keyDownEvent(0, flags: .maskCommand, unicode: "a")))
         XCTAssertFalse(tap._engine.isComposing)
+    }
+
+    /// A Cmd/Ctrl chord that changes keyboard focus (Cmd+` between windows,
+    /// Cmd/Ctrl+Tab between tabs) moves the caret to another window the tap
+    /// cannot track. Keeping the composition alive made the next keystroke
+    /// backspace into the NEW window's text ("vie" + Cmd+` + "t" deleted two
+    /// characters and inserted "việt").
+    func test_commandFocusChord_dropsComposition() {
+        for keyCode in [Int64(50), 48] { // Cmd+` and Cmd+Tab
+            tap._engine.reset()
+            for ch in "vie" {
+                assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+            }
+            XCTAssertTrue(tap._engine.isComposing)
+
+            assertPassed(send(tap, .keyDown, keyDownEvent(keyCode, flags: .maskCommand)))
+            XCTAssertFalse(tap._engine.isComposing, "Cmd+\(keyCode) must drop the composing word")
+            XCTAssertEqual(tap.editCaretBack, 0)
+
+            sink.reset()
+            assertConsumed(send(tap, .keyDown, keyDownEvent(17, unicode: "t")))
+            XCTAssertEqual(sink.calls, [.text("t")], "the next key starts a fresh word")
+        }
+
+        // Ctrl+Tab switches tabs in browsers and terminals the same way.
+        for ch in "vie" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+        }
+        assertPassed(send(tap, .keyDown, keyDownEvent(48, flags: .maskControl)))
+        XCTAssertFalse(tap._engine.isComposing)
+    }
+
+    /// Readline/emacs editing chords (Ctrl+W delete word, Ctrl+K kill line,
+    /// Ctrl+U …) delete text behind the engine's back. They used to fall
+    /// through the generic modifier pass-through, so the next keystroke
+    /// diffed into the already-deleted text (ghost deletions).
+    func test_ctrlReadlineCommand_dropsComposition() {
+        for keyCode in [Int64(13), 40, 32] { // W, K, U
+            tap._engine.reset()
+            for ch in "vie" {
+                assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+            }
+            XCTAssertTrue(tap._engine.isComposing)
+
+            assertPassed(send(tap, .keyDown, keyDownEvent(keyCode, flags: .maskControl)))
+            XCTAssertFalse(tap._engine.isComposing, "Ctrl+\(keyCode) must drop the composing word")
+
+            sink.reset()
+            assertConsumed(send(tap, .keyDown, keyDownEvent(17, unicode: "t")))
+            XCTAssertEqual(sink.calls, [.text("t")], "the next key must not eat deleted text")
+        }
+    }
+
+    /// Copy (Cmd+C / Ctrl+C) changes nothing on screen, so it must keep the
+    /// composition editable — the allowlist of the blanket Cmd/Ctrl reset.
+    func test_commandCopy_keepsComposition() {
+        for ch in "vie" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: String(ch))))
+        }
+        XCTAssertTrue(tap._engine.isComposing)
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(8, flags: .maskCommand)))
+        XCTAssertTrue(tap._engine.isComposing, "copy must not drop the composing word")
+
+        sink.reset()
+        assertConsumed(send(tap, .keyDown, keyDownEvent(17, unicode: "t")))
+        XCTAssertEqual(sink.calls, [.text("t")], "the composition continues after a copy")
+        XCTAssertEqual(tap._engine.currentOutput(), "viet")
     }
 
     func test_flagsChanged_passesThroughAndArmsRefreshBudget() {
@@ -1260,6 +1404,40 @@ final class DispatcherTests: XCTestCase {
 
         assertPassed(send(tap, .keyDown, keyDownEvent(9, unicode: "v")))
         XCTAssertEqual(axInjector.fedChars, ["v"])
+    }
+
+    /// The AX path had no non-ASCII guard (the CGEvent path got one): the
+    /// engine returned an empty diff, `feed` still claimed success and the
+    /// event was consumed with nothing typed — Spotlight looked dead for a
+    /// German/French/Spanish key. Commit the word, drop the state and pass the
+    /// key through so the app inserts it natively.
+    func test_axApp_nonAsciiKey_commitsAndPassesThrough() {
+        detector.bundleID = "com.apple.Spotlight"
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(9, unicode: "v")))
+        XCTAssertEqual(axInjector.fedChars, ["v"])
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(14, unicode: "é")))
+        XCTAssertEqual(axInjector.fedChars, ["v"], "the accented key must not be fed to the engine")
+        XCTAssertEqual(axInjector.committedBoundaries, ["\0"])
+        XCTAssertEqual(axInjector.resetCount, 1)
+
+        // The passed-through keyDown keeps its keyUp.
+        assertPassed(send(tap, .keyUp, keyUpEvent(14, unicode: "é")))
+    }
+
+    /// Option+Backspace deletes a whole word at the OS level. AX mode used to
+    /// AX-delete a single character and consume the event; it must reset and
+    /// pass through like the CGEvent path.
+    func test_axApp_optionBackspace_passesThroughAndResets() {
+        detector.bundleID = "com.apple.Spotlight"
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(51, flags: .maskAlternate)))
+        XCTAssertEqual(axInjector.backspaceCount, 0, "the OS deletes the word, not AX")
+        XCTAssertEqual(axInjector.resetCount, 1)
+
+        assertPassed(send(tap, .keyUp, keyUpEvent(51, flags: .maskAlternate)))
+        XCTAssertEqual(axInjector.backspaceCount, 0)
     }
 
     // MARK: - AX refresh budget (Cmd+Space → Spotlight regression)
@@ -1645,6 +1823,36 @@ final class DispatcherTests: XCTestCase {
         assertConsumed(send(tap, .keyUp, keyUpEvent(179)))
         flushToggle()
         XCTAssertTrue(tap.inputMethodManager.isVietnamese, "Fn+key must not toggle")
+    }
+
+    /// Fn+trackpad click is not a bare Fn tap. The mouse-down branch disarmed
+    /// the modifier chord but left the Fn tap armed, so releasing Fn toggled
+    /// the language (and beeped) without the user asking.
+    func test_fnTap_mouseDownWhileHeld_cancelsTap() {
+        tap.fnHotkeyEnabled = true
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(179)))
+        XCTAssertTrue(tap.fnWasTap)
+
+        assertPassed(send(tap, .leftMouseDown, keyDownEvent(0)))
+        XCTAssertFalse(tap.fnIsDown)
+        XCTAssertFalse(tap.fnWasTap)
+
+        assertConsumed(send(tap, .keyUp, keyUpEvent(179)))
+        flushToggle()
+        XCTAssertTrue(tap.inputMethodManager.isVietnamese, "Fn+click must not toggle")
+    }
+
+    /// The cancel must not require `fnIsDown`: a stale `fnWasTap` (the Fn
+    /// press was seen, its release was lost to a tap disable) used to fire the
+    /// toggle on the next key.
+    func test_fnTap_keyEventWithStaleTapState_cancelsTap() {
+        tap.fnHotkeyEnabled = true
+        tap.fnWasTap = true
+        tap.fnIsDown = false
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(0, unicode: "a")))
+        XCTAssertFalse(tap.fnWasTap)
     }
 
     func test_fnTap_debouncedWithin200ms() {
