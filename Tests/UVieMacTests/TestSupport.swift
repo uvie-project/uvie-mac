@@ -184,6 +184,128 @@ struct TextFieldModel {
     }
 }
 
+// MARK: - Fake text-input client
+
+/// Models a real text field for `InputSourceComposer`: UTF-16 storage, a
+/// caret, and an optional marked range. `setMarkedText` replaces the marked
+/// range (or inserts at the caret) and keeps it marked; `insertText` with
+/// NSNotFound replaces the marked range if any, else inserts at the caret;
+/// with a real range it replaces that UTF-16 range. `selectedRange` returns
+/// the caret.
+class FakeTextClient: TextInputClient {
+    var clientBundleID: String
+    private(set) var utf16 = [UInt16]()
+    private(set) var caret = 0
+    private(set) var markedRange: Range<Int>?
+    /// UTF-16 units selected ending at the caret - a real selection, not a
+    /// marked range. A native insert replaces it like a real field does.
+    var selectionLength = 0
+
+    var text: String {
+        String(String(decoding: utf16, as: UTF16.self))
+    }
+
+    init(bundleID: String = "com.test.fake") {
+        self.clientBundleID = bundleID
+    }
+
+    /// Move the caret the way the user does (click, arrows).
+    func moveCaret(to location: Int) {
+        caret = location
+        selectionLength = 0
+        markedRange = nil
+    }
+
+    /// Select `count` UTF-16 units ending at the caret.
+    func select(_ count: Int) {
+        selectionLength = count
+    }
+
+    func selectedRange() -> NSRange {
+        NSRange(location: caret - selectionLength, length: selectionLength)
+    }
+
+    func setMarkedText(_ text: String) {
+        let units = Array(text.utf16)
+        if let markedRange {
+            utf16.replaceSubrange(markedRange, with: units)
+            caret = markedRange.lowerBound + units.count
+            self.markedRange = units.isEmpty
+                ? nil
+                : markedRange.lowerBound..<(markedRange.lowerBound + units.count)
+        } else {
+            utf16.insert(contentsOf: units, at: caret)
+            markedRange = units.isEmpty ? nil : caret..<(caret + units.count)
+            caret += units.count
+        }
+        selectionLength = 0
+    }
+
+    func insertText(_ text: String, replacementRange: NSRange) {
+        let units = Array(text.utf16)
+        if replacementRange.location == NSNotFound {
+            if let markedRange {
+                utf16.replaceSubrange(markedRange, with: units)
+                caret = markedRange.lowerBound + units.count
+                self.markedRange = nil
+            } else {
+                utf16.insert(contentsOf: units, at: caret)
+                caret += units.count
+            }
+        } else {
+            let range = replacementRange.location..<(replacementRange.location + replacementRange.length)
+            utf16.replaceSubrange(range, with: units)
+            caret = range.lowerBound + units.count
+            markedRange = nil
+        }
+        selectionLength = 0
+    }
+
+    /// The character the app types itself when the composer lets the key
+    /// through - a native insert replaces the current selection.
+    func nativeInsert(_ s: String) {
+        if selectionLength > 0 {
+            utf16.removeSubrange((caret - selectionLength)..<caret)
+            caret -= selectionLength
+            selectionLength = 0
+        }
+        let units = Array(s.utf16)
+        utf16.insert(contentsOf: units, at: caret)
+        caret += units.count
+    }
+
+    /// A native backspace: delete the selection, or one UTF-16 unit before
+    /// the caret.
+    func nativeBackspace() {
+        if selectionLength > 0 {
+            utf16.removeSubrange((caret - selectionLength)..<caret)
+            caret -= selectionLength
+            selectionLength = 0
+            return
+        }
+        guard caret > 0 else { return }
+        utf16.remove(at: caret - 1)
+        caret -= 1
+    }
+}
+
+/// A client whose `selectedRange` reports the caret one call stale - some
+/// apps update the selection asynchronously after `insertText`.
+final class LaggingClient: FakeTextClient {
+    private var lastReported = 0
+    override func selectedRange() -> NSRange {
+        defer { lastReported = caret }
+        return NSRange(location: lastReported, length: 0)
+    }
+}
+
+/// A client that ignores `replacementRange` and always inserts at the caret.
+final class IgnoringClient: FakeTextClient {
+    override func insertText(_ text: String, replacementRange: NSRange) {
+        super.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+}
+
 // MARK: - Stub app detector
 
 /// Scripted `AppContextDetector`: `refreshBundleID()` walks `refreshResults`
@@ -272,6 +394,15 @@ func makeEventTap(vietnamese: Bool = true) -> EventTap {
     // Bypass apps are code-defined defaults (system UI + Simulator), not
     // user settings — seed the real set so production behavior is preserved.
     tap.cachedBypassApps = defaultBypassApps
+    // Pin the frontmost app: `EventTap.init` builds a real
+    // `AppContextDetector` that reads NSWorkspace's frontmost app, which is
+    // `com.apple.loginwindow` (a bypass app) while the screen is locked -
+    // every key would pass through untouched. Tests that need a specific
+    // bundle ID or scripted refreshes replace `tap.appDetector` as before.
+    tap.appDetector = StubAppDetector(bundleID: "com.example.testhost")
+    // Pin secure input off: `IsSecureEventInputEnabled()` is true while the
+    // screen is locked, which would pass every event through untouched.
+    tap.isSecureEventInputEnabled = { false }
     return tap
 }
 

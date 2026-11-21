@@ -19,42 +19,64 @@ final class InputSourceModeController: ObservableObject {
 
     static let shared = InputSourceModeController()
 
+    private let installer: InputSourceInstalling
+    private let defaults: UserDefaults
+    /// Select-retry policy - injectable so tests run without real sleeps.
+    var retryCount = 10
+    var retryDelayNanoseconds: UInt64 = 300_000_000
+
     @Published private(set) var state: State = .off
+
+    init(installer: InputSourceInstalling = SystemInputSourceInstaller(),
+         defaults: UserDefaults = .standard) {
+        self.installer = installer
+        self.defaults = defaults
+    }
 
     /// Toggle the feature from Settings. On: write the flag, install the IM
     /// (fresh or when `needsUpdate`), then retry `enableAndSelect` - TIS
     /// registration is asynchronous and the input source may take a moment
     /// to appear. Off: deselect + disable and write the flag; the installed
     /// bundle stays on disk (`uninstall` is the explicit remove button).
-    func setEnabled(_ on: Bool) {
+    /// Returns the enable Task so callers/tests can await completion (nil
+    /// when disabling - that path is synchronous).
+    @discardableResult
+    func setEnabled(_ on: Bool) -> Task<Void, Never>? {
         if on {
-            UserDefaults.standard.set(true, forKey: DefaultsKey.inputSourceModeEnabled)
+            defaults.set(true, forKey: DefaultsKey.inputSourceModeEnabled)
             state = .installing
-            Task { await enable() }
-        } else {
-            InputSourceInstaller.deselectAndDisable()
-            UserDefaults.standard.set(false, forKey: DefaultsKey.inputSourceModeEnabled)
-            state = .off
+            return Task { await enable() }
         }
+        installer.deselectAndDisable()
+        defaults.set(false, forKey: DefaultsKey.inputSourceModeEnabled)
+        state = .off
+        return nil
     }
 
     private func enable() async {
-        guard InputSourceInstaller.bundledURL != nil else {
+        guard installer.bundledAvailable else {
             state = .unavailable
             return
         }
         do {
-            if InputSourceInstaller.inputSource() == nil || InputSourceInstaller.needsUpdate() {
-                try InputSourceInstaller.install()
+            if !installer.isInstalled || installer.needsUpdate() {
+                try installer.install()
             }
-            for _ in 0..<10 {
-                if InputSourceInstaller.enableAndSelect() {
+            for _ in 0..<retryCount {
+                if installer.enableAndSelect() {
                     state = .active
                     return
                 }
-                try await Task.sleep(nanoseconds: 300_000_000)
+                if retryDelayNanoseconds > 0 {
+                    try await Task.sleep(nanoseconds: retryDelayNanoseconds)
+                }
             }
-            state = .failed("Không chọn được bộ gõ UVie")
+            // The bundle is installed - leave the flag on: once the user
+            // finishes the selection by hand in System Settings, the event
+            // tap hands over automatically.
+            state = .failed(
+                "Chưa bật được bộ gõ UVie. Hãy thêm \"UVie\" trong System Settings > Keyboard > Input Sources rồi chọn nó."
+            )
         } catch {
             state = .failed(error.localizedDescription)
         }
@@ -62,8 +84,8 @@ final class InputSourceModeController: ObservableObject {
 
     /// The "Gỡ bộ gõ" button: remove the installed bundle and drop the flag.
     func uninstall() {
-        InputSourceInstaller.uninstall()
-        UserDefaults.standard.set(false, forKey: DefaultsKey.inputSourceModeEnabled)
+        installer.uninstall()
+        defaults.set(false, forKey: DefaultsKey.inputSourceModeEnabled)
         state = .off
     }
 
@@ -71,21 +93,21 @@ final class InputSourceModeController: ObservableObject {
     /// the IM was installed, install the new copy. The IM is re-selected
     /// only if it was selected before the update.
     func refreshInstalledBundleIfNeeded() {
-        guard UserDefaults.standard.bool(forKey: DefaultsKey.inputSourceModeEnabled) else {
+        guard defaults.bool(forKey: DefaultsKey.inputSourceModeEnabled) else {
             state = .off
             return
         }
-        guard InputSourceInstaller.needsUpdate() else {
-            state = InputSourceInstaller.isSelected ? .active : .off
+        guard installer.needsUpdate() else {
+            state = installer.isSelected ? .active : .off
             return
         }
-        let wasSelected = InputSourceInstaller.isSelected
+        let wasSelected = installer.isSelected
         do {
-            try InputSourceInstaller.install()
+            try installer.install()
             if wasSelected {
-                _ = InputSourceInstaller.enableAndSelect()
+                _ = installer.enableAndSelect()
             }
-            state = InputSourceInstaller.isSelected ? .active : .off
+            state = installer.isSelected ? .active : .off
         } catch {
             state = .failed(error.localizedDescription)
         }

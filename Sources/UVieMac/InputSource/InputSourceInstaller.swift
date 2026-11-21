@@ -61,6 +61,9 @@ enum InputSourceInstaller {
     /// Enable and select the UVie input method, remembering the current
     /// keyboard layout so `deselectAndDisable` can return to it.
     /// Synchronous - callers that need to wait for the registration retry.
+    /// Returns true ONLY when the source is actually selected afterwards:
+    /// the TIS calls can report noErr while the selection silently fails,
+    /// so the observable state is the only trustworthy answer.
     @discardableResult
     static func enableAndSelect() -> Bool {
         guard let source = inputSource() else { return false }
@@ -69,9 +72,9 @@ enum InputSourceInstaller {
            let id = sourceID(of: current) {
             UserDefaults.standard.set(id, forKey: DefaultsKey.inputSourcePreviousLayout)
         }
-        TISEnableInputSource(source)
-        TISSelectInputSource(source)
-        return true
+        guard TISEnableInputSource(source) == noErr,
+              TISSelectInputSource(source) == noErr else { return false }
+        return isSelected
     }
 
     /// Select the stored previous layout (fallback ABC, then US) and disable
@@ -143,4 +146,35 @@ enum InputSourceInstaller {
         guard let ptr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else { return nil }
         return Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
     }
+}
+
+/// The install/select surface `InputSourceModeController` drives - a seam
+/// so the controller's state machine is testable without touching TIS.
+protocol InputSourceInstalling {
+    /// An IM bundle exists to install (embedded in the app, or via
+    /// `UVIE_IM_BUNDLE` in dev).
+    var bundledAvailable: Bool { get }
+    /// The source is registered and found in the input-source list.
+    var isInstalled: Bool { get }
+    /// The UVie input method is the currently selected input source.
+    var isSelected: Bool { get }
+    func needsUpdate() -> Bool
+    func install() throws
+    /// True ONLY if the source is the selected input source afterwards.
+    func enableAndSelect() -> Bool
+    func deselectAndDisable()
+    func uninstall()
+}
+
+/// Production implementation: forwards to the `InputSourceInstaller`
+/// statics (Carbon TIS + FileManager).
+struct SystemInputSourceInstaller: InputSourceInstalling {
+    var bundledAvailable: Bool { InputSourceInstaller.bundledURL != nil }
+    var isInstalled: Bool { InputSourceInstaller.inputSource() != nil }
+    var isSelected: Bool { InputSourceInstaller.isSelected }
+    func needsUpdate() -> Bool { InputSourceInstaller.needsUpdate() }
+    func install() throws { try InputSourceInstaller.install() }
+    func enableAndSelect() -> Bool { InputSourceInstaller.enableAndSelect() }
+    func deselectAndDisable() { InputSourceInstaller.deselectAndDisable() }
+    func uninstall() { InputSourceInstaller.uninstall() }
 }

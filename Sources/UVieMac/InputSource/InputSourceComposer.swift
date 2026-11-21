@@ -11,6 +11,22 @@ struct KeyInput {
     let option: Bool
 }
 
+extension KeyInput {
+    /// Distill an `NSEvent` key event. `event.characters` already carries
+    /// Shift/Caps Lock case; only the chord modifiers that change the
+    /// key's meaning are kept.
+    init(event: NSEvent) {
+        let flags = event.modifierFlags
+        self.init(
+            keyCode: event.keyCode,
+            characters: event.characters,
+            command: flags.contains(.command),
+            control: flags.contains(.control),
+            option: flags.contains(.option)
+        )
+    }
+}
+
 /// The composing-word owner for the input-method process. It renders the
 /// current word through the text-input protocol (`setMarkedText`, or direct
 /// UTF-16 range replacement) instead of the synthetic backspaces the event
@@ -68,23 +84,33 @@ final class InputSourceComposer {
 
     /// Re-read every setting through `UserDefaults.standard` (the app suite
     /// is added by `InputSourceRuntime`, so the app's values are visible).
-    /// If the input method changed mid-word the old composition is flushed
-    /// first - re-rendering it under a different method would corrupt it.
+    /// If the method, style or language toggle changed mid-word the old
+    /// composition is finalized as shown first - re-rendering it under
+    /// different rules would corrupt it.
     func reloadSettings() {
         let defaults = UserDefaults.standard
         let newMethod = defaults.string(forKey: DefaultsKey.inputMethod) ?? "telex"
-        if let loadedInputMethod, loadedInputMethod != newMethod {
+        let newEnabled = defaults.bool(forKey: DefaultsKey.engineEnabled)
+        let newStyle = Style(rawValue: defaults.string(forKey: DefaultsKey.inputSourceStyle) ?? Style.marked.rawValue)
+            ?? .marked
+        let wordInProgress = engine.isComposing || !markedText.isEmpty || directWordLength > 0
+        let changed = (loadedInputMethod != nil && loadedInputMethod != newMethod)
+            || newEnabled != vietnameseEnabled
+            || newStyle != style
+        if wordInProgress && changed {
             if let lastClient {
-                flush(lastClient)
+                // `effectiveStyle` still reports the old style here, which
+                // is exactly how the word is rendered on screen.
+                finalizeShown(lastClient, style: effectiveStyle(for: lastClient))
+            } else {
+                engine.reset()
+                clearCompositionState()
             }
-            engine.reset()
-            clearCompositionState()
         }
         loadedInputMethod = newMethod
         EngineSettings.apply(to: engine, defaults: defaults)
-        vietnameseEnabled = defaults.bool(forKey: DefaultsKey.engineEnabled)
-        style = Style(rawValue: defaults.string(forKey: DefaultsKey.inputSourceStyle) ?? Style.marked.rawValue)
-            ?? .marked
+        vietnameseEnabled = newEnabled
+        style = newStyle
         excludedApps = getExcludedApps().union(getBypassApps())
     }
 
@@ -183,8 +209,6 @@ final class InputSourceComposer {
         // keys: the caret moves somewhere the engine cannot track.
         if Self.flushKeyCodes.contains(key.keyCode) {
             flush(client)
-            engine.reset()
-            clearCompositionState()
             return false
         }
 
@@ -192,16 +216,12 @@ final class InputSourceComposer {
         guard let characters = key.characters, let ch = characters.first, characters.count == 1 else {
             // Function keys and other non-text events end the composition.
             flush(client)
-            engine.reset()
-            clearCompositionState()
             return false
         }
 
         // The engine only understands ASCII: a non-ASCII key inserts natively.
         guard let ascii = ch.asciiValue, ascii >= 32 else {
             flush(client)
-            engine.reset()
-            clearCompositionState()
             return false
         }
 
@@ -282,9 +302,9 @@ final class InputSourceComposer {
     }
 
     /// Commit the composing word, if any, and finalize it on screen.
-    /// `boundary` is the separator key that ended the word (`nil` = the
-    /// plain commit `flush` uses).
-    private func commitWord(boundary: Character?, client: TextInputClient) {
+    /// `boundary` is the separator key that ended the word - the engine's
+    /// commit rules (spelling, English restore) apply only here.
+    private func commitWord(boundary: Character, client: TextInputClient) {
         guard engine.isComposing else {
             // Nothing composing: a leftover marked text still gets finalized.
             if !markedText.isEmpty {
@@ -295,7 +315,7 @@ final class InputSourceComposer {
         }
         let style = effectiveStyle(for: client)
         let shown = engine.currentOutput()
-        let (bs, out) = boundary.map { engine.commitWith(boundary: $0) } ?? engine.commit()
+        let (bs, out) = engine.commitWith(boundary: boundary)
         let shownChars = Array(shown)
         guard bs <= shownChars.count else {
             // A cross-word retro rewrite reaching older committed words.
@@ -344,18 +364,28 @@ final class InputSourceComposer {
         }
     }
 
-    /// Commit whatever is shown without the boundary rules: used when a key
-    /// cannot be handled and must pass through.
+    /// Finalize whatever is shown without the boundary rules: a key that
+    /// cannot be handled passes through, but the word on screen stays
+    /// exactly as rendered - a flush is not a word boundary, so the
+    /// engine's commit rules (which can restore raw keystrokes) never run.
     func flush(_ client: TextInputClient) {
-        commitWord(boundary: nil, client: client)
+        finalizeShown(client, style: effectiveStyle(for: client))
     }
 
-    /// The client is going away (commitComposition/deactivateServer): commit
-    /// the live composition, then drop every engine and render state.
-    func abandonWord(_ client: TextInputClient) {
-        flush(client)
+    /// Finalize the shown word and drop every engine and render state.
+    private func finalizeShown(_ client: TextInputClient, style: Style) {
+        if style == .marked, !markedText.isEmpty {
+            client.insertText(markedText, replacementRange: NSRange(location: NSNotFound, length: 0))
+        }
+        // .direct: the word is already final text - nothing to write.
         engine.reset()
         clearCompositionState()
+    }
+
+    /// The client is going away (commitComposition/deactivateServer):
+    /// finalize the live composition exactly as shown.
+    func abandonWord(_ client: TextInputClient) {
+        flush(client)
     }
 
     // MARK: - Direct-mode helpers

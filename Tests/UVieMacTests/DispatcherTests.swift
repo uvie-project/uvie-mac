@@ -2272,4 +2272,64 @@ final class DispatcherTests: XCTestCase {
         XCTAssertFalse(sink.calls.isEmpty, "deactivating must restore injections")
         XCTAssertTrue(tap._engine.isComposing)
     }
+
+    /// A full sentence plus every editing key passes through untouched
+    /// while the input method owns typing: letters, backspace, space,
+    /// return and arrows produce zero injections and the engine never
+    /// starts composing.
+    func test_inputSourceActive_fullSentenceAndEditingKeysPassThrough() {
+        tap.inputSourceActive = true
+
+        for (ch, keyCode) in zip("vieetj nam ", [9, 8, 4, 4, 17, 38, 49, 45, 0, 38, 49]) {
+            assertPassed(send(tap, .keyDown, keyDownEvent(Int64(keyCode), unicode: String(ch))))
+        }
+        assertPassed(send(tap, .keyDown, keyDownEvent(51))) // backspace
+        assertPassed(send(tap, .keyDown, keyDownEvent(36))) // return
+        assertPassed(send(tap, .keyDown, keyDownEvent(123))) // left arrow
+        XCTAssertTrue(sink.calls.isEmpty)
+        XCTAssertFalse(tap._engine.isComposing)
+    }
+
+    /// The Fn tap toggle keeps working while the input method owns typing.
+    func test_inputSourceActive_fnTapStillToggles() {
+        tap.inputSourceActive = true
+        tap.fnHotkeyEnabled = true
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(179)))
+        assertConsumed(send(tap, .keyUp, keyUpEvent(179)))
+        flushToggle()
+        XCTAssertFalse(tap.inputMethodManager.isVietnamese)
+    }
+
+    /// Handing over mid-word drops the tap's composition cleanly: the
+    /// earlier half-word leaves no state behind for the next word.
+    func test_inputSourceActive_handoverMidWord_resetsCleanly() {
+        for (ch, keyCode) in zip("vie", [9, 8, 4]) {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(Int64(keyCode), unicode: String(ch))))
+        }
+        XCTAssertTrue(tap._engine.isComposing)
+
+        tap.inputSourceActive = true
+        XCTAssertFalse(tap._engine.isComposing, "hand-over must drop the composition")
+        XCTAssertEqual(tap.editCaretBack, 0)
+
+        tap.inputSourceActive = false
+        for (ch, keyCode) in zip("vieetj", [9, 8, 4, 4, 17, 38]) {
+            send(tap, .keyDown, keyDownEvent(Int64(keyCode), unicode: String(ch)))
+        }
+        // No leftover "vie" may leak into the new word's render.
+        XCTAssertEqual(tap._engine.currentOutput(), "việt")
+        assertPassed(send(tap, .keyDown, keyDownEvent(49, unicode: " ")))
+    }
+
+    /// Selecting the input source must not itself change the language or
+    /// trip the non-Latin auto-disable: our own input method is Latin.
+    func test_inputSourceActive_doesNotChangeLanguageOrTripNonLatin() {
+        let wasVietnamese = tap.inputMethodManager.isVietnamese
+        tap.inputSourceActive = true
+        assertPassed(send(tap, .keyDown, keyDownEvent(9, unicode: "v")))
+        XCTAssertEqual(tap.inputMethodManager.isVietnamese, wasVietnamese)
+        tap.inputSourceActive = false
+        assertConsumed(send(tap, .keyDown, keyDownEvent(9, unicode: "v")))
+    }
 }
