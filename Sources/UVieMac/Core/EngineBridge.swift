@@ -62,6 +62,12 @@ func uvie_engine_remove_separator(_ engine: OpaquePointer?) -> Int32
 @_silgen_name("uvie_engine_trailing_gap")
 func uvie_engine_trailing_gap(_ engine: OpaquePointer?) -> Int
 
+@_silgen_name("uvie_engine_remove_last_separator")
+func uvie_engine_remove_last_separator(_ engine: OpaquePointer?) -> Int32
+
+@_silgen_name("uvie_engine_trailing_gap_has_control")
+func uvie_engine_trailing_gap_has_control(_ engine: OpaquePointer?) -> Int32
+
 @_silgen_name("uvie_engine_last_caret_back")
 func uvie_engine_last_caret_back(_ engine: OpaquePointer?) -> Int
 
@@ -335,11 +341,28 @@ final class EngineBridge {
         return uvie_engine_remove_separator(engine) != 0
     }
 
+    /// The separator at the END of the newest word's trailing gap was
+    /// deleted (Backspace with the caret at the gap's end): the engine
+    /// undoes exactly the state that separator created. Returns false when
+    /// there is no separator left to account for.
+    func removeLastSeparator() -> Bool {
+        guard let engine else { return false }
+        return uvie_engine_remove_last_separator(engine) != 0
+    }
+
     /// Separator chars currently on screen right after the newest committed
     /// word (the caret offset 0 sits just left of them).
     var trailingGap: Int {
         guard let engine else { return 0 }
         return uvie_engine_trailing_gap(engine)
+    }
+
+    /// The newest word's trailing gap holds a control separator (Enter,
+    /// Break): the app may have sent or cleared it instead of inserting,
+    /// so the gap's geometry is unconfirmed and must not be trusted.
+    var trailingGapHasControl: Bool {
+        guard let engine else { return false }
+        return uvie_engine_trailing_gap_has_control(engine) != 0
     }
 
     /// Caret offset the host must adopt after the last successful edit or

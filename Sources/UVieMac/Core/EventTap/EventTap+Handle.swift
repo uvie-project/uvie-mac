@@ -265,6 +265,14 @@ extension EventTap {
                 // and the typed char fell through to feed() and was inserted
                 // literally mid-word.
                 editCaretBack = keyCode == 123 ? 1 : -1
+            } else if keyCode == 123, editCaretBack < 0, _engine.trailingGapHasControl {
+                // Left into a gap holding a control separator the app may
+                // never have inserted (a chat app's Enter sent and cleared
+                // the field): its geometry is unconfirmed, so the key goes
+                // native and the anchor drops. Right only moves within or
+                // past the tracked gap; an overshoot resets on the next key.
+                _engine.reset()
+                editCaretBack = 0
             } else {
                 editCaretBack += keyCode == 123 ? 1 : -1
             }
@@ -552,13 +560,23 @@ extension EventTap {
                 }
                 _engine.reset()
                 editCaretBack = 0
-            } else if -editCaretBack <= _engine.trailingGap, _engine.removeSeparator() {
+            } else if editCaretBack < 0, _engine.trailingGapHasControl {
+                // The gap holds a control separator the app may never have
+                // inserted (a chat app's Enter sent and cleared the field):
+                // its geometry is unconfirmed, so the key goes native and
+                // the ring is dropped.
+                _engine.reset()
+                editCaretBack = 0
+            } else if -editCaretBack <= _engine.trailingGap,
+                      (editCaretBack == -_engine.trailingGap ? _engine.removeLastSeparator() : _engine.removeSeparator()) {
                 // The deleted char was one of the separators after the newest
                 // word: the ring stays valid and deleting the last one lands
                 // the caret on the word end (edit-armed). Only a caret INSIDE
                 // the tracked gap can have deleted one of its chars — a caret
                 // further right deleted untracked text, and consuming the
-                // separator then would desync the ring geometry.
+                // separator then would desync the ring geometry. At the end
+                // of the gap the delete is an exact undo (removeLastSeparator);
+                // inside it goes conservative (removeSeparator).
                 editCaretBack += 1
             } else {
                 _engine.reset()
@@ -598,7 +616,14 @@ extension EventTap {
             if editCaretBack >= 0 {
                 _engine.reset()
                 editCaretBack = 0
-            } else if -editCaretBack <= _engine.trailingGap, _engine.removeSeparator() {
+            } else if editCaretBack < 0, _engine.trailingGapHasControl {
+                // Same unconfirmed-gap rule as the idle branch: a control
+                // separator the app may never have inserted must not have
+                // its geometry trusted; the key goes native.
+                _engine.reset()
+                editCaretBack = 0
+            } else if -editCaretBack <= _engine.trailingGap,
+                      (editCaretBack == -_engine.trailingGap ? _engine.removeLastSeparator() : _engine.removeSeparator()) {
                 // Same geometry rule as the idle branch: only a caret inside
                 // the tracked gap can have deleted one of its separators.
                 editCaretBack += 1
@@ -817,7 +842,15 @@ extension EventTap {
                     _engine.reset()
                     editCaretBack = 0
                 } else if -editCaretBack < _engine.trailingGap {
-                    _engine.removeSeparator()
+                    if _engine.trailingGapHasControl {
+                        // Inside an unconfirmed gap (the app may never have
+                        // inserted the control separator): drop tracking and
+                        // let the delete happen natively.
+                        _engine.reset()
+                        editCaretBack = 0
+                    } else {
+                        _engine.removeSeparator()
+                    }
                 }
             } else {
                 // Enter (36, keypad 76) is a newline; other word-terminating

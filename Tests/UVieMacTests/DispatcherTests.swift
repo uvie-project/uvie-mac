@@ -2332,4 +2332,77 @@ final class DispatcherTests: XCTestCase {
         tap.inputSourceActive = false
         assertConsumed(send(tap, .keyDown, keyDownEvent(9, unicode: "v")))
     }
+
+    // MARK: - v3.1.4 control-gap guard + exact separator undo
+
+    /// A chat app may send the line on Return and clear the field: the
+    /// newline the engine counted as a separator may never have landed on
+    /// screen. A Backspace into that unconfirmed gap must go native and drop
+    /// the ring - not undo a separator that is not there and arm edits on
+    /// the sent message.
+    func test_enterBackspace_dropsUnconfirmedGap() {
+        pinEngineOptions()
+        for ch in "chao" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        assertPassed(send(tap, .keyDown, keyDownEvent(36)))
+        XCTAssertEqual(tap._engine.trailingGap, 1)
+        XCTAssertTrue(tap._engine.trailingGapHasControl)
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(51)))
+        XCTAssertEqual(tap._engine.trailingGap, 0, "the ring must be dropped, not shrunk")
+        XCTAssertEqual(tap.editCaretBack, 0)
+
+        // A following tone key is a plain fresh keystroke, not an edit on
+        // the word the host already sent away.
+        sink.reset()
+        assertConsumed(send(tap, .keyDown, keyDownEvent(1, unicode: "s")))
+        XCTAssertEqual(sink.calls, [.text("s")], "no ghost edit may reach the sent line")
+    }
+
+    /// Same unconfirmed gap, Left arrow: stepping left of the newline must
+    /// not walk into geometry the app never confirmed.
+    func test_enterLeftArrow_dropsUnconfirmedGap() {
+        pinEngineOptions()
+        for ch in "chao" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        assertPassed(send(tap, .keyDown, keyDownEvent(36)))
+        XCTAssertTrue(tap._engine.trailingGapHasControl)
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(123)))
+        XCTAssertEqual(tap._engine.trailingGap, 0, "the ring must be dropped")
+        XCTAssertEqual(tap.editCaretBack, 0)
+    }
+
+    /// Deleting the separator at the END of the gap is an exact undo: the
+    /// surviving ',' stays a known separator, so the retro restore rewrites
+    /// "this" across it - identical to typing the comma directly.
+    func test_separatorDeleteAtGapEnd_exactUndoKeepsCommaKnown() {
+        tap.editCommittedEnabled = true
+        pinEngineOptions()
+        XCTAssertEqual(simulate("this, <is a test "), "this,is a test |")
+    }
+
+    /// A plain-space gap has no control separator: the guard must not
+    /// change the old behavior - deleting the space lands the caret on the
+    /// word end, edit-armed as before.
+    func test_spaceGapBackspace_stillArmsPostCommitEdit() {
+        tap.editCommittedEnabled = true
+        pinEngineOptions()
+        for ch in "don" {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
+        }
+        assertPassed(send(tap, .keyDown, keyDownEvent(49)))
+        XCTAssertEqual(tap.editCaretBack, -1)
+
+        assertPassed(send(tap, .keyDown, keyDownEvent(51)))
+        XCTAssertEqual(tap._engine.trailingGap, 0)
+        XCTAssertEqual(tap.editCaretBack, 0, "the caret sits on the word end, edit-armed")
+
+        sink.reset()
+        assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: "j"), unicode: "j")),
+                       "the word-end edit must still fire")
+        XCTAssertEqual(sink.calls, [.backspaces(2), .text("ọn")])
+    }
 }

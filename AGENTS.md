@@ -298,6 +298,17 @@ step past the newer words' ends) and type. Implemented by:
     separators → note another one; anywhere else → reset. Punctuation is
     committed and PASSED through (never fed — feeding it used to wipe the
     ring).
+  - Control-gap guard (`trailingGapHasControl`): a control separator
+    (Enter, Break) may have been sent or cleared rather than inserted —
+    a chat app's newline is unconfirmed geometry. Backspace (both paths),
+    Forward Delete inside the gap, and Left while `editCaretBack < 0` reset
+    and pass the key natively instead of touching the gap; Right still
+    steps (it only moves within/past the tracked gap).
+  - Separator deletes: at the END of the gap (`editCaretBack ==
+    -trailingGap`) `removeLastSeparator()` undoes exactly the state the
+    separator created (comma stays known, retro restore works); inside the
+    gap `removeSeparator()` goes conservative and marks the surviving
+    separator unknown.
 - Gated by `DefaultsKey.editCommittedWords` (default ON, cached in
   `editCommittedEnabled`, refreshed on settings changes; Settings → Bàn phím
   → "Sửa lại từ đã gõ"). Disabled for AX apps (Spotlight) — AX injection

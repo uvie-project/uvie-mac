@@ -237,4 +237,35 @@ final class EngineStateTests: XCTestCase {
         XCTAssertEqual(bs, 0)
         XCTAssertEqual(out, "A")
     }
+
+    /// `removeLastSeparator` undoes exactly the separator at the end of the
+    /// gap (the state it created is rolled back), while
+    /// `trailingGapHasControl` flags gaps holding a control char whose
+    /// on-screen insertion the host could not confirm.
+    func test_removeLastSeparator_andTrailingGapHasControl() {
+        let engine = EngineBridge()
+        for ch in "this" { _ = engine.feed(char: ch) }
+        _ = engine.commit()
+        engine.noteSeparator(",")
+        engine.noteSeparator(" ")
+        XCTAssertEqual(engine.trailingGap, 2)
+        XCTAssertFalse(engine.trailingGapHasControl)
+
+        // Exact undo of the trailing space leaves the ',' separator known.
+        XCTAssertTrue(engine.removeLastSeparator())
+        XCTAssertEqual(engine.trailingGap, 1)
+
+        // A control separator flags the gap; removing it exactly clears both.
+        engine.noteSeparator("\n")
+        XCTAssertEqual(engine.trailingGap, 2)
+        XCTAssertTrue(engine.trailingGapHasControl)
+        XCTAssertTrue(engine.removeLastSeparator())
+        XCTAssertEqual(engine.trailingGap, 1)
+        XCTAssertFalse(engine.trailingGapHasControl)
+
+        // Removing the last separator lands on the word end; nothing left.
+        XCTAssertTrue(engine.removeLastSeparator())
+        XCTAssertEqual(engine.trailingGap, 0)
+        XCTAssertFalse(engine.removeLastSeparator(), "the gap is already empty")
+    }
 }
