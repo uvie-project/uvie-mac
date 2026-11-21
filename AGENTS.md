@@ -4,7 +4,7 @@
 
 ```bash
 UVIE_RS_DIR=../uvie-rs ./build.sh && swift run   # Build + run dev instance
-swift test                                        # Run the integration test suite (175 tests)
+swift test                                        # Run the integration test suite (251 tests)
 swift test --filter EngineTypingTests             # Engine typing behavior only
 swift test --filter DispatcherTests               # Event-tap dispatch decisions only
 swift test --filter FeaturesTests                 # Per-app memory, input-method manager, macros
@@ -306,6 +306,53 @@ step past the newer words' ends) and type. Implemented by:
   resets; mouse/selection/Tab resets recover. Mid-word edits can't restore
   the caret to its original position — after an edit it sits at the word's
   end.
+
+## Input Source mode (experimental, v3.0.0, flag OFF by default)
+
+An optional second input path: a real macOS input method (InputMethodKit)
+that renders the composing word through the text-input protocol instead of
+synthetic backspaces. Chromium pays for every synthetic edit in proportion to
+the field's text length, and a tone key is 5-6 edits on the event-tap path;
+the input method needs one. `DefaultsKey.inputSourceModeEnabled` gates it
+(Settings -> Nâng cao -> "Input Source"); with the flag off nothing is
+installed and the event tap behaves exactly as in v2.
+
+- **One binary, two bundles.** `Sources/UVieMac/App/main.swift` picks the
+  role from the bundle identifier: `com.uvie-project.inputmethod.UVie` runs
+  `InputSourceRuntime.runServer()` (IMKServer only - no AppDelegate, event
+  tap, menu bar or Sparkle), anything else runs `UVieMacApp.main()`.
+  `scripts/build-im-bundle.sh` assembles `UVieIM.app` (same binary,
+  `InputMethod/Info.plist`); release.yml nests it in
+  `UVieMac.app/Contents/Helpers` and signs it before the outer app. Sparkle
+  is weak-linked because the IM bundle carries no Sparkle.framework.
+- **Mutual exclusion.** `KeyboardLayoutMonitor.isUVieInputSourceActive` is
+  true while the UVie input method is the selected input source;
+  `EventTap.inputSourceActive` caches it and `handle()` passes every keyboard
+  event through after the language-toggle hotkey block. Switching to any
+  other input source re-arms the tap. Our own source never counts as a
+  non-Latin layout.
+- **Centralized settings.** The IM process adds the app's defaults domain
+  (`UserDefaults.standard.addSuite`) so shared code reads the app's values;
+  `SharedSettingsBroadcaster` (app process, only while the flag is on) posts
+  a distributed notification on every defaults / language change and the IM
+  reloads. The Vietnamese/English flag and the per-app memory stay owned by
+  the app process (`InputMethodManager` + `MemoryManager`).
+- **Rendering** (`InputSourceComposer`, unit-tested against a fake text
+  field): `marked` style shows the word as marked text and commits it on a
+  boundary; `direct` style replaces the word's UTF-16 tail in place and
+  falls back to marked text per app as soon as the client's selection does
+  not match the expected caret (asynchronous clients, ignored replacement
+  ranges) - it never replaces text on a failed precondition.
+- **Not in this mode yet:** auto-capitalize, post-commit word editing, and
+  cross-word retro rewrites in marked style (the word is committed as shown).
+- **Not yet verified on a real machine:** key delivery through IMK in real
+  apps, and `TISEnableInputSource` (in one attempt on a locked session it
+  returned noErr but the source stayed disabled, so `TISSelectInputSource`
+  failed with -50; the user may have to add "UVie" under System Settings ->
+  Keyboard -> Input Sources by hand).
+- `DispatcherTests` read the real frontmost app: on a locked screen it is
+  `com.apple.loginwindow` (a bypass app) and they all fail. Run the suite on
+  an unlocked session.
 
 ## Escape restores English (EVKey-style)
 
