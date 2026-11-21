@@ -144,4 +144,36 @@ final class EngineTypingTests: XCTestCase {
         XCTAssertEqual(typeString("aw", method: .simpleTelex), "ă")
         XCTAssertEqual(typeString("vieejt", method: .simpleTelex), "việt")
     }
+
+    func test_vniDeferredModifiers() {
+        XCTAssertEqual(typeString("bien6", method: .vni), "biên")
+        XCTAssertEqual(typeString("tieng61", method: .vni), "tiếng")
+        XCTAssertEqual(typeString("duoc975", method: .vni), "được")
+        XCTAssertEqual(typeString("nguoi72", method: .vni), "người")
+        XCTAssertEqual(typeString("chu7o7ng", method: .vni), "chương")
+        XCTAssertEqual(typeString("d9u7o7c5", method: .vni), "được")
+        XCTAssertEqual(typeString("hoac85", method: .vni), "hoặc")
+        XCTAssertEqual(typeString("thuo73", method: .vni), "thuở")
+        XCTAssertEqual(typeString("TIENG61", method: .vni), "TIẾNG")
+    }
+
+    func test_vniDoubleDigitCancelKeepsDigit() {
+        XCTAssertEqual(typeString("a66", method: .vni), "a6")
+        XCTAssertEqual(typeString("o77", method: .vni), "o7")
+        XCTAssertEqual(typeString("a88", method: .vni), "a8")
+        XCTAssertEqual(typeString("d99", method: .vni), "d9")
+        XCTAssertEqual(typeString("u7o77", method: .vni), "uo7")
+    }
+
+    func test_giOnsetWShorthand() {
+        XCTAssertEqual(typeString("giwx"), "giữ")
+        XCTAssertEqual(typeString("giwax"), "giữa")
+        XCTAssertEqual(typeString("giwowngf"), "giường")
+    }
+
+    func test_capsLockVietnameseRun() {
+        XCTAssertEqual(typeString("TIEENGS VIEEJT HUEEJ "), "TIẾNG VIỆT HUỆ ")
+        XCTAssertEqual(typeString("TIEENGS VIEEJT TIMS "), "TIẾNG VIỆT TÍM ")
+        XCTAssertEqual(typeString("dufng JIRA "), "dùng JIRA ")
+    }
 }
