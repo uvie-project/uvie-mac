@@ -4,7 +4,7 @@
 
 ```bash
 UVIE_RS_DIR=../uvie-rs ./build.sh && swift run   # Build + run dev instance
-swift test                                        # Run the integration test suite (317 tests)
+swift test                                        # Run the integration test suite (321 tests)
 swift test --filter EngineTypingTests             # Engine typing behavior only
 swift test --filter DispatcherTests               # Event-tap dispatch decisions only
 swift test --filter FeaturesTests                 # Per-app memory, input-method manager, macros

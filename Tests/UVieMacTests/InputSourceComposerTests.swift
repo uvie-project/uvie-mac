@@ -74,6 +74,20 @@ final class InputSourceComposerTests: XCTestCase {
         }
     }
 
+    /// Feed every character through a FRESH client wrapper per key around
+    /// one shared field - the same per-key adapter lifetime the production
+    /// IMK path has (`UVieInputController` creates a new `IMKClientAdapter`
+    /// for each event, so the composer can never retain one).
+    private func typePerKey(_ s: String, _ composer: InputSourceComposer,
+                            _ store: TextFieldStore, bundleID: String = "com.test.fake") {
+        for ch in s {
+            let client = FakeTextClient(store: store, bundleID: bundleID)
+            if !composer.handle(key: charKey(ch), client: client) {
+                client.nativeInsert(String(ch))
+            }
+        }
+    }
+
     /// Feed a key the composer should decline; types natively when it does.
     private func sendNative(_ key: KeyInput, _ composer: InputSourceComposer,
                             _ client: FakeTextClient, native: (() -> Void)? = nil) -> Bool {
@@ -276,29 +290,65 @@ final class InputSourceComposerTests: XCTestCase {
     // MARK: - Settings changes mid-session
 
     /// Switching the language off mid-word finalizes what is shown and the
-    /// next keys type natively - no character lost or duplicated.
+    /// next keys type natively - no character lost or duplicated. Every key
+    /// arrives through a fresh client wrapper: a settings reload can never
+    /// finalize through the client that typed the word, because none is
+    /// retained.
     func test_languageOffMidWord_bothStyles() {
-        forBothStyles { composer, client in
-            type("vieej", composer, client)
-            XCTAssertEqual(client.text, "việ")
+        for style in ["marked", "direct"] {
+            let composer = makeComposer(style: style)
+            let store = TextFieldStore()
+            typePerKey("vieej", composer, store)
+            XCTAssertEqual(FakeTextClient(store: store).text, "việ")
             UserDefaults.standard.set(false, forKey: DefaultsKey.engineEnabled)
             composer.reloadSettings()
-            type("t ", composer, client)
-            XCTAssertEqual(client.text, "việt ")
+            typePerKey("t ", composer, store)
+            XCTAssertEqual(FakeTextClient(store: store).text, "việt ")
             UserDefaults.standard.set(true, forKey: DefaultsKey.engineEnabled)
         }
+    }
+
+    /// Focus loss right after the settings flip: the deferred finalize must
+    /// still write the shown word exactly once.
+    func test_abandonWordAfterLanguageOff_freshClient() {
+        let composer = makeComposer(style: "marked")
+        let store = TextFieldStore()
+        typePerKey("vieej", composer, store)
+        UserDefaults.standard.set(false, forKey: DefaultsKey.engineEnabled)
+        composer.reloadSettings()
+        composer.abandonWord(FakeTextClient(store: store))
+        XCTAssertEqual(FakeTextClient(store: store).text, "việ")
+        composer.abandonWord(FakeTextClient(store: store))
+        XCTAssertEqual(FakeTextClient(store: store).text, "việ")
+        UserDefaults.standard.set(true, forKey: DefaultsKey.engineEnabled)
+    }
+
+    /// Language off then on again before any key: the deferred finalize
+    /// still fires once on the next key, and that key starts a fresh word.
+    func test_languageOffThenOnBeforeKey_finalizesOnce() {
+        let composer = makeComposer(style: "marked")
+        let store = TextFieldStore()
+        typePerKey("vieej", composer, store)
+        UserDefaults.standard.set(false, forKey: DefaultsKey.engineEnabled)
+        composer.reloadSettings()
+        UserDefaults.standard.set(true, forKey: DefaultsKey.engineEnabled)
+        composer.reloadSettings()
+        typePerKey("t ", composer, store)
+        XCTAssertEqual(FakeTextClient(store: store).text, "việt ")
     }
 
     /// Switching the input method mid-word finalizes the half-typed word as
     /// shown, and the next word obeys the new method.
     func test_methodSwitchMidWord_flushesAndUsesNewMethod() {
-        forBothStyles { composer, client in
-            type("tiee", composer, client)
-            XCTAssertEqual(client.text, "tiê")
+        for style in ["marked", "direct"] {
+            let composer = makeComposer(style: style)
+            let store = TextFieldStore()
+            typePerKey("tiee", composer, store)
+            XCTAssertEqual(FakeTextClient(store: store).text, "tiê")
             UserDefaults.standard.set("vni", forKey: DefaultsKey.inputMethod)
             composer.reloadSettings()
-            type("a1 ", composer, client)
-            XCTAssertEqual(client.text, "tiêá ")
+            typePerKey("a1 ", composer, store)
+            XCTAssertEqual(FakeTextClient(store: store).text, "tiêá ")
             UserDefaults.standard.set("telex", forKey: DefaultsKey.inputMethod)
         }
     }
@@ -327,32 +377,32 @@ final class InputSourceComposerTests: XCTestCase {
     }
 
     /// Switching style mid-word finalizes the shown word first; the next
-    /// key starts a fresh word under the new style.
+    /// key starts a fresh word under the new style. Per-key wrappers
+    /// exercise the deferred finalize path for the marked side.
     func test_styleSwitchMidWord_finalizesShownWord() {
         // marked -> direct: "vie" becomes final text, 'e' starts a new
         // direct word appended at the caret.
-        UserDefaults.standard.set("marked", forKey: DefaultsKey.inputSourceStyle)
-        var composer = InputSourceComposer()
-        var client = FakeTextClient()
-        type("vie", composer, client)
-        XCTAssertEqual(client.text, "vie")
+        var composer = makeComposer(style: "marked")
+        var store = TextFieldStore()
+        typePerKey("vie", composer, store)
+        XCTAssertEqual(FakeTextClient(store: store).text, "vie")
         UserDefaults.standard.set("direct", forKey: DefaultsKey.inputSourceStyle)
         composer.reloadSettings()
-        type("e", composer, client)
-        XCTAssertEqual(client.text, "viee")
+        typePerKey("e", composer, store)
+        XCTAssertEqual(FakeTextClient(store: store).text, "viee")
 
         // direct -> marked: "vie" is already final text, 'e' becomes a
         // fresh marked word.
-        UserDefaults.standard.set("direct", forKey: DefaultsKey.inputSourceStyle)
-        composer = InputSourceComposer()
-        client = FakeTextClient()
-        type("vie", composer, client)
-        XCTAssertEqual(client.text, "vie")
+        composer = makeComposer(style: "direct")
+        store = TextFieldStore()
+        typePerKey("vie", composer, store)
+        XCTAssertEqual(FakeTextClient(store: store).text, "vie")
         UserDefaults.standard.set("marked", forKey: DefaultsKey.inputSourceStyle)
         composer.reloadSettings()
-        type("e", composer, client)
-        XCTAssertEqual(client.text, "viee")
-        XCTAssertNotNil(client.markedRange)
+        typePerKey("e", composer, store)
+        let lastClient = FakeTextClient(store: store)
+        XCTAssertEqual(lastClient.text, "viee")
+        XCTAssertNotNil(lastClient.markedRange)
     }
 
     /// Modern orthography moves the tone mark between the two vowel forms.

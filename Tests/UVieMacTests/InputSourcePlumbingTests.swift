@@ -7,6 +7,34 @@ import XCTest
 /// identity strings that must match InputMethod/Info.plist for macOS to
 /// load the input method, and the bundle packaging script.
 final class InputSourcePlumbingTests: XCTestCase {
+    private var savedDefaults: [String: Any?] = [:]
+    private let savedDefaultsKeys = [
+        DefaultsKey.engineEnabled,
+        DefaultsKey.inputMethod,
+        DefaultsKey.inputSourceStyle,
+    ]
+
+    override func setUp() {
+        super.setUp()
+        for key in savedDefaultsKeys {
+            savedDefaults[key] = UserDefaults.standard.object(forKey: key)
+        }
+    }
+
+    override func tearDown() {
+        for (key, value) in savedDefaults {
+            if let value {
+                UserDefaults.standard.set(value, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        savedDefaults = [:]
+        // The shared composer keeps process state - reset it so one test's
+        // composition cannot leak into the next.
+        pinComposerDefaults()
+        super.tearDown()
+    }
 
     // MARK: - KeyInput(event:)
 
@@ -149,6 +177,54 @@ final class InputSourcePlumbingTests: XCTestCase {
     /// live IMK session (crashes outside one) - a system boundary, untested
     /// here. Their only logic is `composer.abandonWord`, covered by
     /// InputSourceComposerTests.test_abandonWordTwice.
+
+    /// The production per-key adapter lifetime: a settings reload after a
+    /// half-typed word cannot finalize through the (per-key, never
+    /// retained) client, so the shown word is finalized by the NEXT handle
+    /// call - before that key is interpreted under the new settings.
+    func test_controller_languageOffMidWord_finalizesOnNextKey() {
+        pinComposerDefaults()
+        let controller = UVieInputController()
+        let fake = FakeIMKClient()
+        for (code, ch) in zip([9, 8, 4, 4, 38], "vieej") {
+            _ = controller.handle(keyEvent(keyCode: UInt16(code), characters: String(ch)),
+                                  client: fake)
+        }
+        XCTAssertEqual(fake.lastMarkedText, "việ")
+
+        // Language off via a distributed-notification style reload: no
+        // client is involved.
+        UserDefaults.standard.set(false, forKey: DefaultsKey.engineEnabled)
+        InputSourceRuntime.composer.reloadSettings()
+
+        let consumed = controller.handle(
+            keyEvent(keyCode: 17, characters: "t"), client: fake)
+        XCTAssertFalse(consumed, "language off - the key passes through")
+        XCTAssertEqual(fake.lastInsertText, "việ",
+                       "the interrupted word is finalized exactly as shown")
+    }
+
+    /// Same deferred finalize, but on the feedable-key path: switching the
+    /// input method mid-word finalizes the shown word before the next key
+    /// is fed under the new method.
+    func test_controller_methodSwitchMidWord_finalizesOnNextKey() {
+        pinComposerDefaults()
+        let controller = UVieInputController()
+        let fake = FakeIMKClient()
+        for (code, ch) in zip([17, 8, 4, 4], "tiee") {
+            _ = controller.handle(keyEvent(keyCode: UInt16(code), characters: String(ch)),
+                                  client: fake)
+        }
+        XCTAssertEqual(fake.lastMarkedText, "tiê")
+
+        UserDefaults.standard.set("vni", forKey: DefaultsKey.inputMethod)
+        InputSourceRuntime.composer.reloadSettings()
+
+        _ = controller.handle(keyEvent(keyCode: 0, characters: "a"), client: fake)
+        _ = controller.handle(keyEvent(keyCode: 18, characters: "1"), client: fake)
+        XCTAssertEqual(fake.lastInsertText, "tiê")
+        XCTAssertEqual(fake.lastMarkedText, "á")
+    }
 
     /// A non-IMK sender or non-keyDown event is declined.
     func test_controller_handleDeclinesForeignInput() {

@@ -192,14 +192,39 @@ struct TextFieldModel {
 /// NSNotFound replaces the marked range if any, else inserts at the caret;
 /// with a real range it replaces that UTF-16 range. `selectedRange` returns
 /// the caret.
+/// The mutable field contents shared by every `FakeTextClient` wrapper a
+/// test creates - one field, many per-key adapter objects, mirroring how
+/// `UVieInputController` wraps the same IMK client in a fresh
+/// `IMKClientAdapter` per keystroke.
+final class TextFieldStore {
+    var utf16 = [UInt16]()
+    var caret = 0
+    var markedRange: Range<Int>?
+    var selectionLength = 0
+}
+
 class FakeTextClient: TextInputClient {
     var clientBundleID: String
-    private(set) var utf16 = [UInt16]()
-    private(set) var caret = 0
-    private(set) var markedRange: Range<Int>?
+    let store: TextFieldStore
+
+    private var utf16: [UInt16] {
+        get { store.utf16 }
+        set { store.utf16 = newValue }
+    }
+    private(set) var caret: Int {
+        get { store.caret }
+        set { store.caret = newValue }
+    }
+    private(set) var markedRange: Range<Int>? {
+        get { store.markedRange }
+        set { store.markedRange = newValue }
+    }
     /// UTF-16 units selected ending at the caret - a real selection, not a
     /// marked range. A native insert replaces it like a real field does.
-    var selectionLength = 0
+    var selectionLength: Int {
+        get { store.selectionLength }
+        set { store.selectionLength = newValue }
+    }
 
     var text: String {
         String(String(decoding: utf16, as: UTF16.self))
@@ -207,6 +232,14 @@ class FakeTextClient: TextInputClient {
 
     init(bundleID: String = "com.test.fake") {
         self.clientBundleID = bundleID
+        self.store = TextFieldStore()
+    }
+
+    /// A wrapper around an existing field - used to model the per-key
+    /// adapter lifetime of the real IMK path.
+    init(store: TextFieldStore, bundleID: String = "com.test.fake") {
+        self.clientBundleID = bundleID
+        self.store = store
     }
 
     /// Move the caret the way the user does (click, arrows).
