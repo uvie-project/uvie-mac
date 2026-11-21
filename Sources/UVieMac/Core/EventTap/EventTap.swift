@@ -101,7 +101,21 @@ final class EventTap: ObservableObject {
     /// (normal typing position after a commit space); positive = caret moved
     /// back into earlier text. Tracked in the arrow/backspace/character
     /// handlers; invalidated (reset to 0) wherever the engine is reset.
-    var editCaretBack = 0
+    var editCaretBack = 0 {
+        didSet {
+            // A confirmed re-anchor (full reset, or an offset the engine
+            // itself reported) ends any arrow drift.
+            if editCaretBack == 0 { caretDrift = false }
+        }
+    }
+
+    /// An arrow key moved the tracked caret since the newest word's gap was
+    /// committed - whether the real caret actually moved is unconfirmable
+    /// (Right at the end of the field does nothing on screen). While set, a
+    /// Backspace delete at what we believe is the end of the gap cannot be
+    /// trusted to have removed the last separator, so the exact
+    /// `removeLastSeparator` undo is not used.
+    var caretDrift = false
 
     /// Key codes whose keyDown was passed through to the app untouched
     /// (untranslatable glyph, engine-idle empty diff, AX injection declined).

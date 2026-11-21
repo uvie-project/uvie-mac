@@ -2405,4 +2405,18 @@ final class DispatcherTests: XCTestCase {
                        "the word-end edit must still fire")
         XCTAssertEqual(sink.calls, [.backspaces(2), .text("ọn")])
     }
+
+    /// Right at the field end drifts the tracked caret without moving the
+    /// real one; Left then puts the real caret between ',' and ' ', so the
+    /// Backspace deletes the comma. The drift must disable the exact
+    /// separator undo (which would undo the surviving SPACE and record ','
+    /// as known) - the conservative path keeps the comma unknown and no
+    /// later restore may re-inject it.
+    func test_arrowDriftBackspace_keepsCommaOutOfRestores() {
+        tap.editCommittedEnabled = true
+        pinEngineOptions()
+        let result = simulate("this, }{<}is a test ")
+        XCTAssertFalse(result.contains(","), "screen \(result)")
+        XCTAssertTrue(result.contains(" "), "the surviving space must stay")
+    }
 }

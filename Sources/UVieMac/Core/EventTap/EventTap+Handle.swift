@@ -265,6 +265,9 @@ extension EventTap {
                 // and the typed char fell through to feed() and was inserted
                 // literally mid-word.
                 editCaretBack = keyCode == 123 ? 1 : -1
+                // The commit re-anchored the caret, but whether the arrow
+                // moved the real caret is unconfirmed.
+                caretDrift = true
             } else if keyCode == 123, editCaretBack < 0, _engine.trailingGapHasControl {
                 // Left into a gap holding a control separator the app may
                 // never have inserted (a chat app's Enter sent and cleared
@@ -275,6 +278,7 @@ extension EventTap {
                 editCaretBack = 0
             } else {
                 editCaretBack += keyCode == 123 ? 1 : -1
+                caretDrift = true
             }
             // A caret step applied before an in-flight replace lands at the
             // wrong position, so queue it behind the replace.
@@ -568,7 +572,9 @@ extension EventTap {
                 _engine.reset()
                 editCaretBack = 0
             } else if -editCaretBack <= _engine.trailingGap,
-                      (editCaretBack == -_engine.trailingGap ? _engine.removeLastSeparator() : _engine.removeSeparator()) {
+                      (!caretDrift && editCaretBack == -_engine.trailingGap
+                          ? _engine.removeLastSeparator()
+                          : _engine.removeSeparator()) {
                 // The deleted char was one of the separators after the newest
                 // word: the ring stays valid and deleting the last one lands
                 // the caret on the word end (edit-armed). Only a caret INSIDE
@@ -623,7 +629,9 @@ extension EventTap {
                 _engine.reset()
                 editCaretBack = 0
             } else if -editCaretBack <= _engine.trailingGap,
-                      (editCaretBack == -_engine.trailingGap ? _engine.removeLastSeparator() : _engine.removeSeparator()) {
+                      (!caretDrift && editCaretBack == -_engine.trailingGap
+                          ? _engine.removeLastSeparator()
+                          : _engine.removeSeparator()) {
                 // Same geometry rule as the idle branch: only a caret inside
                 // the tracked gap can have deleted one of its separators.
                 editCaretBack += 1
