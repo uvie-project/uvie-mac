@@ -16,15 +16,10 @@ final class UVieInputController: IMKInputController {
         guard event.type == .keyDown, let input = sender as? IMKTextInput else {
             return false
         }
-        let flags = event.modifierFlags
-        let key = KeyInput(
-            keyCode: event.keyCode,
-            characters: event.characters,
-            command: flags.contains(.command),
-            control: flags.contains(.control),
-            option: flags.contains(.option)
+        return InputSourceRuntime.composer.handle(
+            key: KeyInput(event: event),
+            client: IMKClientAdapter(input)
         )
-        return InputSourceRuntime.composer.handle(key: key, client: IMKClientAdapter(input))
     }
 
     override func commitComposition(_ sender: Any!) {

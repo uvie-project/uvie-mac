@@ -62,7 +62,7 @@ extension EventTap {
         // replacement makes the field look dead (every ASCII key vanishes).
         // Pass everything through untouched and drop the composition — the
         // text behind the engine's back changed without it seeing it.
-        if IsSecureEventInputEnabled() {
+        if isSecureEventInputEnabled() {
             _engine.reset()
             editCaretBack = 0
             return Unmanaged.passRetained(event)

@@ -4,7 +4,7 @@
 
 ```bash
 UVIE_RS_DIR=../uvie-rs ./build.sh && swift run   # Build + run dev instance
-swift test                                        # Run the integration test suite (251 tests)
+swift test                                        # Run the integration test suite (321 tests)
 swift test --filter EngineTypingTests             # Engine typing behavior only
 swift test --filter DispatcherTests               # Event-tap dispatch decisions only
 swift test --filter FeaturesTests                 # Per-app memory, input-method manager, macros
@@ -350,9 +350,26 @@ installed and the event tap behaves exactly as in v2.
   returned noErr but the source stayed disabled, so `TISSelectInputSource`
   failed with -50; the user may have to add "UVie" under System Settings ->
   Keyboard -> Input Sources by hand).
-- `DispatcherTests` read the real frontmost app: on a locked screen it is
-  `com.apple.loginwindow` (a bypass app) and they all fail. Run the suite on
-  an unlocked session.
+- **A flush is not a word boundary** (`InputSourceComposer.flush`): language
+  off, a settings change, Cmd/Ctrl/Option chords, arrows and focus loss
+  finalize the word exactly as shown and reset the engine - they never run
+  the commit rules, which would restore an incomplete syllable's raw keys
+  ("việ" must not turn back into "vieej"). Only space, punctuation and
+  Return commit through `commitWith`.
+- **Marked style cannot rewrite earlier words**: when a commit's diff
+  reaches past the composing word (the retroactive English restore, "this is
+  the best ..."), the word is committed as shown and the engine history is
+  dropped. Direct style applies the rewrite with a replacement range.
+- `InputSourceModeController` reports `.active` only when the source is
+  really selected afterwards (`enableAndSelect` returns `isSelected`); after
+  the retries it shows the "add UVie in System Settings" guidance and keeps
+  the flag on.
+- **Tests are independent of the session state**: `makeEventTap()` pins a
+  `StubAppDetector` and the `isSecureEventInputEnabled` seam, so the suite
+  passes on a locked screen (frontmost app `loginwindow`, secure input on).
+  `InputSourceEquivalenceTests` asserts that the input-source path and the
+  event-tap path render the same text for a Telex/VNI/mixed corpus and for
+  every backspace step.
 
 ## Escape restores English (EVKey-style)
 

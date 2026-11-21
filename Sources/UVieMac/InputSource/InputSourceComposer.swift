@@ -11,6 +11,22 @@ struct KeyInput {
     let option: Bool
 }
 
+extension KeyInput {
+    /// Distill an `NSEvent` key event. `event.characters` already carries
+    /// Shift/Caps Lock case; only the chord modifiers that change the
+    /// key's meaning are kept.
+    init(event: NSEvent) {
+        let flags = event.modifierFlags
+        self.init(
+            keyCode: event.keyCode,
+            characters: event.characters,
+            command: flags.contains(.command),
+            control: flags.contains(.control),
+            option: flags.contains(.option)
+        )
+    }
+}
+
 /// The composing-word owner for the input-method process. It renders the
 /// current word through the text-input protocol (`setMarkedText`, or direct
 /// UTF-16 range replacement) instead of the synthetic backspaces the event
@@ -57,9 +73,10 @@ final class InputSourceComposer {
     /// The input method loaded by the last `reloadSettings` - a change
     /// mid-word must flush the old composition first.
     private var loadedInputMethod: String?
-    /// The last client a key was handled for - lets `reloadSettings` flush a
-    /// live composition when the input method changes.
-    private weak var lastClient: TextInputClient?
+    /// Set when a settings change interrupted a live marked word: the word
+    /// is finalized as shown by the NEXT entry point that has a client.
+    /// IMK clients are not retained - the adapter is per-key.
+    private var pendingMarkedFinalize = false
     private let macroManager = MacroManager.shared
 
     init() {
@@ -68,23 +85,31 @@ final class InputSourceComposer {
 
     /// Re-read every setting through `UserDefaults.standard` (the app suite
     /// is added by `InputSourceRuntime`, so the app's values are visible).
-    /// If the input method changed mid-word the old composition is flushed
-    /// first - re-rendering it under a different method would corrupt it.
+    /// If the method, style or language toggle changed mid-word the old
+    /// composition is finalized as shown first - re-rendering it under
+    /// different rules would corrupt it.
     func reloadSettings() {
         let defaults = UserDefaults.standard
         let newMethod = defaults.string(forKey: DefaultsKey.inputMethod) ?? "telex"
-        if let loadedInputMethod, loadedInputMethod != newMethod {
-            if let lastClient {
-                flush(lastClient)
-            }
+        let newEnabled = defaults.bool(forKey: DefaultsKey.engineEnabled)
+        let newStyle = Style(rawValue: defaults.string(forKey: DefaultsKey.inputSourceStyle) ?? Style.marked.rawValue)
+            ?? .marked
+        let wordInProgress = engine.isComposing || !markedText.isEmpty || directWordLength > 0
+        let changed = (loadedInputMethod != nil && loadedInputMethod != newMethod)
+            || newEnabled != vietnameseEnabled
+            || newStyle != style
+        if wordInProgress && changed {
+            // The client is not retained (IMK adapters are per-key), so
+            // finalizing is deferred: drop the engine state but keep
+            // `markedText` - the next handle/flush inserts it as shown.
             engine.reset()
-            clearCompositionState()
+            clearDirectState()
+            pendingMarkedFinalize = !markedText.isEmpty
         }
         loadedInputMethod = newMethod
         EngineSettings.apply(to: engine, defaults: defaults)
-        vietnameseEnabled = defaults.bool(forKey: DefaultsKey.engineEnabled)
-        style = Style(rawValue: defaults.string(forKey: DefaultsKey.inputSourceStyle) ?? Style.marked.rawValue)
-            ?? .marked
+        vietnameseEnabled = newEnabled
+        style = newStyle
         excludedApps = getExcludedApps().union(getBypassApps())
     }
 
@@ -104,7 +129,7 @@ final class InputSourceComposer {
     /// Handle one key. Returns true when the key was consumed by the
     /// composer (the client must not process it further).
     func handle(key: KeyInput, client: TextInputClient) -> Bool {
-        lastClient = client
+        finalizePendingMarkedText(client)
 
         // Language off, or an app the user excluded: the word on screen is
         // finalized and the key types natively.
@@ -183,8 +208,6 @@ final class InputSourceComposer {
         // keys: the caret moves somewhere the engine cannot track.
         if Self.flushKeyCodes.contains(key.keyCode) {
             flush(client)
-            engine.reset()
-            clearCompositionState()
             return false
         }
 
@@ -192,16 +215,12 @@ final class InputSourceComposer {
         guard let characters = key.characters, let ch = characters.first, characters.count == 1 else {
             // Function keys and other non-text events end the composition.
             flush(client)
-            engine.reset()
-            clearCompositionState()
             return false
         }
 
         // The engine only understands ASCII: a non-ASCII key inserts natively.
         guard let ascii = ch.asciiValue, ascii >= 32 else {
             flush(client)
-            engine.reset()
-            clearCompositionState()
             return false
         }
 
@@ -282,9 +301,9 @@ final class InputSourceComposer {
     }
 
     /// Commit the composing word, if any, and finalize it on screen.
-    /// `boundary` is the separator key that ended the word (`nil` = the
-    /// plain commit `flush` uses).
-    private func commitWord(boundary: Character?, client: TextInputClient) {
+    /// `boundary` is the separator key that ended the word - the engine's
+    /// commit rules (spelling, English restore) apply only here.
+    private func commitWord(boundary: Character, client: TextInputClient) {
         guard engine.isComposing else {
             // Nothing composing: a leftover marked text still gets finalized.
             if !markedText.isEmpty {
@@ -295,7 +314,7 @@ final class InputSourceComposer {
         }
         let style = effectiveStyle(for: client)
         let shown = engine.currentOutput()
-        let (bs, out) = boundary.map { engine.commitWith(boundary: $0) } ?? engine.commit()
+        let (bs, out) = engine.commitWith(boundary: boundary)
         let shownChars = Array(shown)
         guard bs <= shownChars.count else {
             // A cross-word retro rewrite reaching older committed words.
@@ -344,18 +363,38 @@ final class InputSourceComposer {
         }
     }
 
-    /// Commit whatever is shown without the boundary rules: used when a key
-    /// cannot be handled and must pass through.
+    /// Finalize whatever is shown without the boundary rules: a key that
+    /// cannot be handled passes through, but the word on screen stays
+    /// exactly as rendered - a flush is not a word boundary, so the
+    /// engine's commit rules (which can restore raw keystrokes) never run.
     func flush(_ client: TextInputClient) {
-        commitWord(boundary: nil, client: client)
+        finalizePendingMarkedText(client)
+        finalizeShown(client, style: effectiveStyle(for: client))
     }
 
-    /// The client is going away (commitComposition/deactivateServer): commit
-    /// the live composition, then drop every engine and render state.
-    func abandonWord(_ client: TextInputClient) {
-        flush(client)
+    /// An interrupted marked word becomes final text exactly as shown the
+    /// first time a client is available again.
+    private func finalizePendingMarkedText(_ client: TextInputClient) {
+        guard pendingMarkedFinalize else { return }
+        client.insertText(markedText, replacementRange: NSRange(location: NSNotFound, length: 0))
+        markedText = ""
+        pendingMarkedFinalize = false
+    }
+
+    /// Finalize the shown word and drop every engine and render state.
+    private func finalizeShown(_ client: TextInputClient, style: Style) {
+        if style == .marked, !markedText.isEmpty {
+            client.insertText(markedText, replacementRange: NSRange(location: NSNotFound, length: 0))
+        }
+        // .direct: the word is already final text - nothing to write.
         engine.reset()
         clearCompositionState()
+    }
+
+    /// The client is going away (commitComposition/deactivateServer):
+    /// finalize the live composition exactly as shown.
+    func abandonWord(_ client: TextInputClient) {
+        flush(client)
     }
 
     // MARK: - Direct-mode helpers
@@ -401,6 +440,7 @@ final class InputSourceComposer {
 
     private func clearCompositionState() {
         markedText = ""
+        pendingMarkedFinalize = false
         clearDirectState()
     }
 

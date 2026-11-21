@@ -20,6 +20,10 @@ final class EventTap: ObservableObject {
 
     let inputMethodManager: InputMethodManager
     var appDetector: AppContextDetecting
+    /// Test seam: `IsSecureEventInputEnabled()` is system state (true while
+    /// the screen is locked or a password field holds focus), so tests
+    /// substitute a fixed value instead of depending on the session state.
+    var isSecureEventInputEnabled: () -> Bool = IsSecureEventInputEnabled
     var axInjector: AXTextInjecting
     /// Synthetic-event sink — `self` (real CGEvent posting) in production,
     /// a recording stub in tests. `unowned` so the reference to `self` does
