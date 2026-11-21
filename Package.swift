@@ -25,7 +25,11 @@ let package = Package(
                 .linkedFramework("Carbon"),
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("ServiceManagement"),
-                .linkedFramework("Sparkle"),
+                .linkedFramework("InputMethodKit"),
+                // Weak: the UVieIM input-method bundle carries no
+                // Sparkle.framework, so the load command must not be
+                // required at launch (Sparkle code never runs there).
+                .unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "Sparkle"], .when(platforms: [.macOS])),
                 .linkedLibrary("uvie"),
                 .unsafeFlags(["-F", frameworksPath], .when(platforms: [.macOS])),
                 .unsafeFlags(["-L", frameworksPath], .when(platforms: [.macOS])),
@@ -46,7 +50,9 @@ let package = Package(
                 .linkedFramework("Carbon"),
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("ServiceManagement"),
-                .linkedFramework("Sparkle"),
+                .linkedFramework("InputMethodKit"),
+                // Weak: see the executable target note above.
+                .unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "Sparkle"], .when(platforms: [.macOS])),
                 .linkedLibrary("uvie"),
                 .unsafeFlags(["-F", frameworksPath], .when(platforms: [.macOS])),
                 .unsafeFlags(["-L", frameworksPath], .when(platforms: [.macOS])),

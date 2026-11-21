@@ -2230,4 +2230,46 @@ final class DispatcherTests: XCTestCase {
         assertPassed(send(tap, .keyDown, keyDownEvent(9, unicode: "v")))
         XCTAssertTrue(axInjector.fedChars.isEmpty)
     }
+
+    // MARK: - UVie input source active
+
+    /// While the UVie input method is the selected input source, its process
+    /// owns the composing word through the text-input protocol: every
+    /// keyboard event passes through unconsumed and nothing is injected.
+    func test_inputSourceActive_lettersPassThroughUnconsumed() {
+        tap.inputSourceActive = true
+
+        for ch in "vieetj" {
+            assertPassed(send(tap, .keyDown, keyDownEvent(9, unicode: String(ch))))
+        }
+        XCTAssertTrue(sink.calls.isEmpty)
+        XCTAssertFalse(tap._engine.isComposing)
+    }
+
+    /// The language-toggle hotkey is the one event the tap still owns while
+    /// the input method is active - the user must be able to flip languages
+    /// no matter which input path renders the text.
+    func test_inputSourceActive_customHotkeyStillToggles() {
+        tap.inputSourceActive = true
+        armCustomHotkey(keyCode: 14, flags: [.maskCommand, .maskShift]) // ⌘⇧E
+
+        assertConsumed(send(tap, .keyDown, keyDownEvent(14, flags: [.maskCommand, .maskShift])))
+        XCTAssertTrue(sink.calls.isEmpty)
+        flushToggle()
+        XCTAssertFalse(tap.inputMethodManager.isVietnamese)
+    }
+
+    /// Deactivating the UVie input source restores normal synthetic-event
+    /// typing - the transition reset drops whatever the IM typed.
+    func test_inputSourceActive_deactivateRestoresTyping() {
+        tap.inputSourceActive = true
+        assertPassed(send(tap, .keyDown, keyDownEvent(9, unicode: "v")))
+
+        tap.inputSourceActive = false
+        for (ch, keyCode) in zip("vieetj", [9, 8, 4, 4, 17, 38]) {
+            assertConsumed(send(tap, .keyDown, keyDownEvent(Int64(keyCode), unicode: String(ch))))
+        }
+        XCTAssertFalse(sink.calls.isEmpty, "deactivating must restore injections")
+        XCTAssertTrue(tap._engine.isComposing)
+    }
 }

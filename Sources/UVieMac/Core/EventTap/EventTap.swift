@@ -1,5 +1,6 @@
 import Cocoa
 import Carbon
+import Combine
 
 // MARK: - EventTap
 
@@ -104,6 +105,20 @@ final class EventTap: ObservableObject {
     /// app with a keyDown it never saw released (unbalanced key cycle).
     /// Entries are removed as the matching keyUp arrives.
     var passedThroughKeys = Set<Int64>()
+
+    /// Cached `KeyboardLayoutMonitor.isUVieInputSourceActive`. While true the
+    /// UVie input method owns the composing word, so `handle()` passes every
+    /// keyboard event through untouched (the language-toggle hotkey still
+    /// runs). Internal-settable so tests can drive the flag without a real
+    /// input-source switch.
+    var inputSourceActive = false {
+        didSet {
+            if oldValue != inputSourceActive {
+                inputSourceActiveDidChange()
+            }
+        }
+    }
+    private var inputSourceActiveCancellable: AnyCancellable?
 
     /// Number of synthetic keyDown events this tap has posted that have not
     /// come back through it yet. Every post targets `.cgSessionEventTap` - the
@@ -251,6 +266,11 @@ final class EventTap: ObservableObject {
         observeEngineResetNotification()
         observeAppSwitch()
         observeLanguageSwitch()
+        inputSourceActive = layoutMonitor.isUVieInputSourceActive
+        inputSourceActiveCancellable = layoutMonitor.$isUVieInputSourceActive
+            .sink { [weak self] active in
+                self?.inputSourceActive = active
+            }
     }
 
     deinit {
@@ -449,17 +469,7 @@ final class EventTap: ObservableObject {
             _engine.reset()
             editCaretBack = 0
         }
-        _engine.setInputMethod(newMethod)
-        _engine.setModernOrthography(defaults.bool(forKey: DefaultsKey.modernOrthography))
-        _engine.setRelaxedCoda(defaults.bool(forKey: DefaultsKey.relaxedCoda))
-        _engine.setQuickTelex(defaults.bool(forKey: DefaultsKey.quickTelex))
-        _engine.setQuickStart(defaults.bool(forKey: DefaultsKey.quickStart))
-        // Restore-English-words override (dictionary passthrough). The
-        // checkSpelling key defaults to true; treat a missing key as enabled.
-        _engine.setEnglishOverride(
-            defaults.object(forKey: DefaultsKey.checkSpelling) == nil
-                || defaults.bool(forKey: DefaultsKey.checkSpelling)
-        )
+        EngineSettings.apply(to: _engine, defaults: defaults)
         // Cache the post-commit-editing flag too — read on the character-key
         // hot path from the event-tap callback.
         editCommittedEnabled = defaults.object(forKey: DefaultsKey.editCommittedWords) == nil
@@ -487,6 +497,16 @@ final class EventTap: ObservableObject {
         // Reload app classification caches too — user may have added/removed
         // excluded or compound apps in Settings.
         reloadAppCaches()
+    }
+
+    /// The UVie input source became active or inactive. Either way the
+    /// engine's model of the screen no longer matches what the IM process
+    /// typed (or what passed through natively), so drop all of it.
+    private func inputSourceActiveDidChange() {
+        _engine.reset()
+        editCaretBack = 0
+        invalidateWebContentCache()
+        passedThroughKeys.removeAll()
     }
 
     /// Reload cached app classification sets from UserDefaults. Called on

@@ -7,6 +7,11 @@ final class KeyboardLayoutMonitor: ObservableObject {
     static let shared = KeyboardLayoutMonitor()
 
     @Published var isNonLatinLayout: Bool = false
+    /// True while the UVie input method itself is the selected input source:
+    /// its process owns the composing word, so the event tap passes every
+    /// key through. Also forces `isNonLatinLayout` false - our own source
+    /// must never trip the non-Latin auto-disable.
+    @Published private(set) var isUVieInputSourceActive = false
 
     private var currentSource: TISInputSource?
 
@@ -19,10 +24,22 @@ final class KeyboardLayoutMonitor: ObservableObject {
     private func checkCurrentLayout() {
         guard let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else {
             isNonLatinLayout = false
+            isUVieInputSourceActive = false
             return
         }
         currentSource = source
-        isNonLatinLayout = !isLatinLayout(source)
+        isUVieInputSourceActive = Self.isUVieInputSource(source)
+        isNonLatinLayout = isUVieInputSourceActive ? false : !isLatinLayout(source)
+    }
+
+    /// True when `source` is the UVie input method (its TIS input source ID
+    /// is the bundle identifier).
+    static func isUVieInputSource(_ source: TISInputSource) -> Bool {
+        guard let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else {
+            return false
+        }
+        let id = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
+        return id == InputSourceIdentity.bundleID
     }
 
     /// Check if input source uses Latin script

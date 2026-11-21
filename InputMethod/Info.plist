@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key><string>en</string>
+	<key>CFBundleExecutable</key><string>UVieMac</string>
+	<key>CFBundleIdentifier</key><string>com.uvie-project.inputmethod.UVie</string>
+	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+	<key>CFBundleName</key><string>UVie</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleShortVersionString</key><string>0.0.0</string>
+	<key>CFBundleVersion</key><string>0</string>
+	<key>LSMinimumSystemVersion</key><string>13.0</string>
+	<key>LSBackgroundOnly</key><string>1</string>
+	<key>NSPrincipalClass</key><string>NSApplication</string>
+	<key>InputMethodConnectionName</key><string>UVie_IM_Connection</string>
+	<key>InputMethodServerControllerClass</key><string>UVieInputController</string>
+	<key>tsInputMethodCharacterRepertoireKey</key><array><string>Latn</string></array>
+	<key>tsInputMethodIconFileKey</key><string>UVieIM.icns</string>
+	<key>TISInputSourceID</key><string>com.uvie-project.inputmethod.UVie</string>
+	<key>TISIntendedLanguage</key><string>vi</string>
+</dict>
+</plist>

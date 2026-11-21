@@ -97,6 +97,15 @@ extension EventTap {
             return nil
         }
 
+        // The UVie input method is the current input source: its process
+        // owns the composing word through the text-input protocol, so every
+        // keyboard event passes through untouched. Only the language-toggle
+        // hotkey above (custom hotkey, Fn tap, modifier-only chord) stays
+        // live so the user can still switch languages.
+        if inputSourceActive {
+            return Unmanaged.passRetained(event)
+        }
+
         // Pass through flags changes. A Cmd/Ctrl/Fn press is a potential
         // app-switch trigger (Cmd+Space → Spotlight, Ctrl+Space input source,
         // Globe key) — arm the one-shot AX refresh so the next keyDown in an

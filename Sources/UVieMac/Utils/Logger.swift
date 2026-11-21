@@ -42,13 +42,16 @@ final class Logger {
     private init() {
         traceEnabledCache = UserDefaults.standard.bool(forKey: Self.keystrokeTraceKey)
 
+        // The UVieIM input-method process logs to its own file - two
+        // processes must not rotate the same file.
+        let fileName = InputSourceRuntime.isInputMethodProcess ? "uvieim.log" : "uviemac.log"
         if let libraryDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first {
             let logsDir = libraryDir.appending(path: "Logs/UVieMac")
             try? FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
-            logURL = logsDir.appending(path: "uviemac.log")
+            logURL = logsDir.appending(path: fileName)
         } else {
             // Fallback to tmp if the user library directory is unavailable.
-            logURL = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "uviemac.log")
+            logURL = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: fileName)
         }
 
         // Registered after all stored properties are initialized — the closure

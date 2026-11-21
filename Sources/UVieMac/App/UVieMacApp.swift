@@ -1,7 +1,6 @@
 import SwiftUI
 import Sparkle
 
-@main
 struct UVieMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
@@ -64,6 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private lazy var memory = MemoryManager()
     private lazy var inputMethodManager = InputMethodManager(memory: memory)
     private lazy var eventTap = EventTap(inputMethodManager: inputMethodManager)
+    private lazy var settingsBroadcaster = SharedSettingsBroadcaster(inputMethodManager: inputMethodManager)
+    private let inputSourceMode = InputSourceModeController.shared
     private let updateChecker = UpdateChecker.shared
     private let hotkeyManager = GlobalHotkeyManager.shared
     private var updaterController: SPUStandardUpdaterController?
@@ -82,22 +83,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
 
         // Register factory defaults - only applied if key has never been set
-        UserDefaults.standard.register(defaults: [
-            DefaultsKey.engineEnabled:      true,
-            DefaultsKey.checkSpelling:      true,
-            DefaultsKey.smartSwitchKey:     true,
-            DefaultsKey.uppercaseFirstChar: false,
-            DefaultsKey.macroEnabled:       false,
-            DefaultsKey.modernOrthography:  true,
-            DefaultsKey.relaxedCoda:        false,
-            DefaultsKey.inputMethod:        "telex",
-            DefaultsKey.inputMethodHotkeyEnabled: true,
-            DefaultsKey.autoDisableOnNonLatinLayout: true,
-            DefaultsKey.quickTelex:         false,
-            DefaultsKey.quickStart:         false,
-            DefaultsKey.contextLanguageDetection: true,
-            DefaultsKey.autoInstallUpdates: true,
-        ])
+        registerFactoryDefaults()
+
+        // Optional input-source mode: refresh an outdated installed IM
+        // bundle, and run the settings broadcaster only while the feature
+        // flag is on (flag changes re-evaluate it below).
+        inputSourceMode.refreshInstalledBundleIfNeeded()
+        settingsBroadcaster.setEnabled(
+            UserDefaults.standard.bool(forKey: DefaultsKey.inputSourceModeEnabled)
+        )
+        NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.settingsBroadcaster.setEnabled(
+                    UserDefaults.standard.bool(forKey: DefaultsKey.inputSourceModeEnabled)
+                )
+            }
+        }
 
         menuBar = MenuBarController()
         menuBar?.setEventTap(eventTap)

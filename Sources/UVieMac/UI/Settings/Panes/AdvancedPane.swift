@@ -9,6 +9,28 @@ struct AdvancedPane: View {
     @AppStorage(DefaultsKey.quickStart) private var quickStart: Bool = false
     @AppStorage(DefaultsKey.contextLanguageDetection) private var contextLanguageDetection: Bool = true
     @AppStorage(Logger.keystrokeTraceKey) private var keystrokeTrace: Bool = false
+    @AppStorage(DefaultsKey.inputSourceModeEnabled) private var inputSourceModeFlag: Bool = false
+    @AppStorage(DefaultsKey.inputSourceStyle) private var inputSourceStyle: String = "marked"
+    @ObservedObject private var inputSourceMode = InputSourceModeController.shared
+
+    /// The toggle writes through the controller: enabling installs and
+    /// selects the UVieIM input method, disabling deselects it.
+    private var inputSourceToggle: Binding<Bool> {
+        Binding(
+            get: { inputSourceModeFlag },
+            set: { inputSourceMode.setEnabled($0) }
+        )
+    }
+
+    private var inputSourceStatusText: String {
+        switch inputSourceMode.state {
+        case .off: return "Tắt"
+        case .installing: return "Đang cài đặt..."
+        case .active: return "Đang hoạt động"
+        case .failed(let message): return message
+        case .unavailable: return "Không khả dụng trong bản dev"
+        }
+    }
 
     var body: some View {
         PaneScroll {
@@ -95,6 +117,54 @@ struct AdvancedPane: View {
                         .padding(14)
                     }
                     .buttonStyle(.plain)
+                }
+            }
+
+            PaneSection("Input Source") {
+                SettingsCard {
+                    SToggleRow("keyboard.badge.ellipsis",
+                                "Chế độ Input Source (thử nghiệm)",
+                                "Gõ qua bộ gõ hệ thống của macOS thay vì giả lập phím. Khi bộ gõ UVie đang được chọn, chế độ giả lập phím tự tắt.",
+                                inputSourceToggle)
+                }
+                SettingsCard {
+                    HStack(spacing: 14) {
+                        Image(systemName: "textformat.alt")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Kiểu hiển thị")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        Spacer()
+                        Picker("", selection: $inputSourceStyle) {
+                            Text("Gạch chân từ đang gõ (ổn định)").tag("marked")
+                            Text("Thay trực tiếp (thử nghiệm)").tag("direct")
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                    }
+                    .padding(14)
+                    .disabled(!inputSourceModeFlag)
+                    .opacity(inputSourceModeFlag ? 1 : 0.5)
+                }
+                SettingsCard {
+                    HStack(spacing: 14) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24)
+                        Text(inputSourceStatusText)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Gỡ bộ gõ") {
+                            inputSourceMode.uninstall()
+                        }
+                        .font(.system(size: 12))
+                    }
+                    .padding(14)
                 }
             }
 

@@ -136,6 +136,19 @@ jobs:
           # Copy entitlements for reference
           cp UVieMac.entitlements "$CONTENTS/Resources/"
 
+      # ── 6b. Bundle UVieIM input method ────────────────────────────────────
+      # Assemble the nested UVieIM.app (same binary, IM Info.plist) inside
+      # Contents/Helpers and sign it now, so the outer app signs over an
+      # already-signed input method in the next step.
+      - name: Bundle UVieIM input method
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+        run: |
+          ./scripts/build-im-bundle.sh \
+            .build/release/UVieMac \
+            UVieMac.app/Contents/Helpers \
+            "$SIGNING_IDENTITY"
+
       # ── 7. Code sign ──────────────────────────────────────────────────────
       - name: Sign .app
         env:
