@@ -176,4 +176,11 @@ final class EngineTypingTests: XCTestCase {
         XCTAssertEqual(typeString("TIEENGS VIEEJT TIMS "), "TIẾNG VIỆT TÍM ")
         XCTAssertEqual(typeString("dufng JIRA "), "dùng JIRA ")
     }
+
+    func test_foreignOnsetsStayLiteral() {
+        XCTAssertEqual(typeString("jira"), "jira")
+        XCTAssertEqual(typeString("jas"), "jas")
+        XCTAssertEqual(typeString("zoo"), "zoo")
+        XCTAssertEqual(typeString("tooi dufng jira "), "tôi dùng jira ")
+    }
 }
