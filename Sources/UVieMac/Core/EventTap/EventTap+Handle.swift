@@ -571,18 +571,14 @@ extension EventTap {
                 // the ring is dropped.
                 _engine.reset()
                 editCaretBack = 0
-            } else if -editCaretBack <= _engine.trailingGap,
-                      (!caretDrift && editCaretBack == -_engine.trailingGap
-                          ? _engine.removeLastSeparator()
-                          : _engine.removeSeparator()) {
-                // The deleted char was one of the separators after the newest
-                // word: the ring stays valid and deleting the last one lands
-                // the caret on the word end (edit-armed). Only a caret INSIDE
-                // the tracked gap can have deleted one of its chars — a caret
-                // further right deleted untracked text, and consuming the
-                // separator then would desync the ring geometry. At the end
-                // of the gap the delete is an exact undo (removeLastSeparator);
-                // inside it goes conservative (removeSeparator).
+            } else if !caretDrift, editCaretBack == -_engine.trailingGap,
+                      _engine.removeLastSeparator() {
+                // The caret sat exactly at the end of the tracked gap with no
+                // arrow drift: the deleted separator is the gap's last one and
+                // the engine undoes it exactly, landing the caret on the word
+                // end (edit-armed). Any other position - inside the gap, or a
+                // drifted caret - leaves the deleted separator's identity
+                // uncertain, so tracking drops instead of guessing.
                 editCaretBack += 1
             } else {
                 _engine.reset()
@@ -628,12 +624,11 @@ extension EventTap {
                 // its geometry trusted; the key goes native.
                 _engine.reset()
                 editCaretBack = 0
-            } else if -editCaretBack <= _engine.trailingGap,
-                      (!caretDrift && editCaretBack == -_engine.trailingGap
-                          ? _engine.removeLastSeparator()
-                          : _engine.removeSeparator()) {
-                // Same geometry rule as the idle branch: only a caret inside
-                // the tracked gap can have deleted one of its separators.
+            } else if !caretDrift, editCaretBack == -_engine.trailingGap,
+                      _engine.removeLastSeparator() {
+                // Same policy as the idle branch: only a delete certainly at
+                // the end of the gap is undone exactly; anything uncertain
+                // drops tracking.
                 editCaretBack += 1
             } else {
                 _engine.reset()
@@ -850,15 +845,11 @@ extension EventTap {
                     _engine.reset()
                     editCaretBack = 0
                 } else if -editCaretBack < _engine.trailingGap {
-                    if _engine.trailingGapHasControl {
-                        // Inside an unconfirmed gap (the app may never have
-                        // inserted the control separator): drop tracking and
-                        // let the delete happen natively.
-                        _engine.reset()
-                        editCaretBack = 0
-                    } else {
-                        _engine.removeSeparator()
-                    }
+                    // Inside the tracked separators - which one Forward
+                    // Delete removed is uncertain, so tracking drops instead
+                    // of guessing.
+                    _engine.reset()
+                    editCaretBack = 0
                 }
             } else {
                 // Enter (36, keypad 76) is a newline; other word-terminating

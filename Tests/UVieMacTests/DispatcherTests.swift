@@ -932,10 +932,9 @@ final class DispatcherTests: XCTestCase {
 
     /// Forward Delete removes the char right of the caret without moving it.
     /// At the END of the commit space it deletes untracked text (the space
-    /// stays and so does the ring); INSIDE the tracked separators it removes
-    /// one of them, so the next Backspace lands on the word end — the same
-    /// position the idle-backspace path uses to arm post-commit editing.
-    func test_forwardDelete_shrinksTrackedSeparators() {
+    /// stays and so does the ring); INSIDE the tracked separators which one
+    /// it removed is uncertain, so tracking drops instead of guessing.
+    func test_forwardDeleteInsideGap_dropsTracking() {
         for ch in "don" {
             assertConsumed(send(tap, .keyDown, keyDownEvent(keyCode(for: ch), unicode: String(ch))))
         }
@@ -950,18 +949,15 @@ final class DispatcherTests: XCTestCase {
         XCTAssertEqual(tap.editCaretBack, -2)
 
         // One left puts the caret between the two spaces: the forward delete
-        // removes the second one and the offset is unchanged.
+        // inside the gap drops the ring.
         assertPassed(send(tap, .keyDown, keyDownEvent(123)))
         assertPassed(send(tap, .keyDown, keyDownEvent(117)))
-        XCTAssertEqual(tap.editCaretBack, -1)
-
-        // The caret now sits at the end of the single remaining space.
-        assertPassed(send(tap, .keyDown, keyDownEvent(51)))   // backspace → offset 0
         XCTAssertEqual(tap.editCaretBack, 0)
+        XCTAssertEqual(tap._engine.trailingGap, 0, "the ring must be dropped, not shrunk")
 
         sink.reset()
         assertConsumed(send(tap, .keyDown, keyDownEvent(1, unicode: "s")))
-        XCTAssertEqual(sink.calls, [.backspaces(2), .text("ón")])
+        XCTAssertEqual(sink.calls, [.text("s")], "a fresh keystroke, not an edit")
     }
 
     /// Inserting a space inside committed text (offset > 0) breaks the ring
@@ -2418,5 +2414,14 @@ final class DispatcherTests: XCTestCase {
         let result = simulate("this, }{<}is a test ")
         XCTAssertFalse(result.contains(","), "screen \(result)")
         XCTAssertTrue(result.contains(" "), "the surviving space must stay")
+    }
+
+    /// Left-then-Right puts the real caret back at the gap end but sets
+    /// caretDrift: the Backspace deletes '.', and which separator died is
+    /// uncertain - the ring drops, so the dot's stale code-token state
+    /// cannot keep the next word raw ("dduwowcj" must render "được").
+    func test_driftedSeparatorDelete_clearsCodeTokenDot() {
+        pinEngineOptions()
+        XCTAssertEqual(simulate("chaof.{}<, dduwowcj "), "chào, được |")
     }
 }
