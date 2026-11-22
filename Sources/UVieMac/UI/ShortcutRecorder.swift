@@ -55,24 +55,37 @@ struct ShortcutRecorder: View {
     var body: some View {
         HStack(spacing: 8) {
             if isRecording {
-                Text(chordSymbols.isEmpty ? "Nhấn phím tắt…" : "\(chordSymbols) …")
+                Text(chordSymbols.isEmpty ? "Bấm tổ hợp phím…" : "\(chordSymbols) …")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                    .background(UVieTheme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(Color.accentColor.opacity(0.4), lineWidth: 1)
+                            .strokeBorder(UVieTheme.accent.opacity(0.4), lineWidth: 1)
                     )
             } else if let binding = hotkeyManager.binding {
+                // Recorded binding shown as a keycap
                 Text(binding.displayString)
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background {
+                        ZStack(alignment: .bottom) {
+                            RoundedRectangle(cornerRadius: UVieTheme.keycapRadius)
+                                .fill(Color.primary.opacity(0.22))
+                                .offset(y: 1)
+                            RoundedRectangle(cornerRadius: UVieTheme.keycapRadius)
+                                .fill(Color(nsColor: .controlBackgroundColor))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: UVieTheme.keycapRadius)
+                                        .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
+                                )
+                        }
+                    }
             } else {
-                Text("Chưa đặt")
+                Text("Chưa chọn")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
@@ -87,7 +100,7 @@ struct ShortcutRecorder: View {
                     startRecording()
                 }
             } label: {
-                Text(isRecording ? "Xong" : "Đặt phím")
+                Text(isRecording ? "Xong" : "Chọn phím")
             }
             .buttonStyle(.bordered)
             .controlSize(.small)

@@ -61,7 +61,7 @@ final class MenuBarController: ObservableObject {
     private func setupPopover() {
         let p = NSPopover()
         p.behavior = .transient
-        // Size the popover from the SwiftUI content: the "Cập nhật ngay" row
+        // Size the popover from the SwiftUI content: the "Cập nhật" row
         // only exists while a release is available, so a fixed height would
         // clip it (or leave a gap once the app is updated).
         let host = NSHostingController(rootView: MenuBarPopoverView(controller: self))

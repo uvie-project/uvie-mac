@@ -73,10 +73,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general    = "Tổng quan"
-    case keyboard   = "Bàn phím"
-    case macro      = "Macro"
+    case keyboard   = "Gõ phím"
+    case macro      = "Gõ tắt"
     case apps       = "Ứng dụng"
-    case advanced   = "Nâng cao"
+    case advanced   = "Hệ thống"
     case about      = "Giới thiệu"
 
     var id: String { rawValue }
@@ -85,9 +85,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .general:   return "slider.horizontal.3"
         case .keyboard:  return "keyboard"
-        case .macro:     return "doc.text.magnifyingglass"
-        case .apps:      return "wrench.and.screwdriver"
-        case .advanced:  return "gearshape.2"
+        case .macro:     return "text.insert"
+        case .apps:      return "square.grid.2x2"
+        case .advanced:  return "gearshape"
         case .about:     return "info.circle"
         }
     }
@@ -134,6 +134,7 @@ struct SettingsView: View {
         }
         .frame(minWidth: 620, minHeight: 460)
         .background(Color(nsColor: .windowBackgroundColor))
+        .tint(UVieTheme.accent)
         .onReceive(NotificationCenter.default.publisher(for: .navigateToSettingsTab)) { note in
             if let t = note.userInfo?["tab"] as? SettingsTab {
                 tab = t
@@ -155,22 +156,22 @@ private struct SidebarRow: View {
             HStack(spacing: 10) {
                 Image(systemName: tab.icon)
                     .font(.system(size: 14))
-                    .foregroundStyle(selected ? .white : .secondary)
+                    .foregroundStyle(selected ? UVieTheme.accentText : .secondary)
                     .frame(width: 18)
                 Text(tab.rawValue)
                     .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? .white : .primary)
+                    .foregroundStyle(.primary)
                 Spacer()
                 if showUpdateBadge {
                     Circle()
-                        .fill(Color.accentColor)
+                        .fill(UVieTheme.accent)
                         .frame(width: 7, height: 7)
                 }
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
             .background(
-                selected ? Color.accentColor : .clear,
+                selected ? UVieTheme.accentSoft : .clear,
                 in: RoundedRectangle(cornerRadius: 8)
             )
             .contentShape(Rectangle())

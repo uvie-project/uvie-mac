@@ -18,11 +18,11 @@ struct BugReportGuide: View {
             HStack(spacing: 10) {
                 Image(systemName: "ladybug.fill")
                     .font(.system(size: 20))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(UVieTheme.accentText)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Báo lỗi")
                         .font(.system(size: 16, weight: .semibold))
-                    Text("Làm theo các bước dưới đây để gửi báo cáo lỗi")
+                    Text("Bốn bước để gửi báo cáo cho nhóm phát triển")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -39,17 +39,17 @@ struct BugReportGuide: View {
                 VStack(alignment: .leading, spacing: 16) {
                     StepView(
                         number: 1,
-                        title: "Bật chẩn đoán lỗi",
-                        description: "Mở tab Nâng cao → bật nút \"Bật chẩn đoán\". Điều này ghi lại mỗi phím gõ để phân tích lỗi.",
-                        actionTitle: keystrokeTrace ? "Đã bật ✓" : "Mở tab Nâng cao",
+                        title: "Bật ghi phím gõ",
+                        description: "UVie sẽ lưu lại từng phím bạn bấm để tìm nguyên nhân lỗi.",
+                        actionTitle: keystrokeTrace ? "Đã bật" : "Bật ghi phím",
                         actionDisabled: keystrokeTrace,
-                        action: { openAdvancedTab() }
+                        action: { keystrokeTrace = true }
                     )
 
                     StepView(
                         number: 2,
-                        title: "Gõ lại từ gây lỗi",
-                        description: "Quay lại app đang dùng và gõ lại chính xác từ/câu gây ra lỗi. Mỗi phím sẽ được ghi vào log.",
+                        title: "Gõ lại chỗ bị lỗi",
+                        description: "Quay về ứng dụng bạn đang dùng và gõ lại đúng từ hoặc câu bị lỗi.",
                         actionTitle: nil,
                         actionDisabled: false,
                         action: nil
@@ -57,9 +57,9 @@ struct BugReportGuide: View {
 
                     StepView(
                         number: 3,
-                        title: "Tạo file chẩn đoán",
-                        description: "Tạo file .txt chứa log + thông tin hệ thống, sau đó copy nội dung vào clipboard.",
-                        actionTitle: diagnosticsCopied ? "Đã copy ✓" : "Tạo & copy log",
+                        title: "Sao chép nhật ký",
+                        description: "UVie tạo một file .txt gồm nhật ký gõ phím và thông tin máy, rồi sao chép nội dung vào bộ nhớ tạm.",
+                        actionTitle: diagnosticsCopied ? "Đã sao chép" : "Tạo và sao chép",
                         actionDisabled: diagnosticsCopied,
                         action: { generateAndCopyDiagnostics() }
                     )
@@ -86,9 +86,9 @@ struct BugReportGuide: View {
 
                     StepView(
                         number: 4,
-                        title: "Mở GitHub Issues và dán nội dung",
-                        description: "Mở trang GitHub Issues, tạo issue mới và dán (Cmd+V) nội dung log vào ô mô tả.",
-                        actionTitle: "Mở GitHub Issues",
+                        title: "Dán vào GitHub",
+                        description: "Mở trang báo lỗi trên GitHub, tạo issue mới và bấm Cmd+V để dán nhật ký vào phần mô tả.",
+                        actionTitle: "Mở GitHub",
                         actionDisabled: false,
                         action: { openGitHubIssues() }
                     )
@@ -104,7 +104,7 @@ struct BugReportGuide: View {
                     .font(.system(size: 12))
                 Spacer()
                 if keystrokeTrace {
-                    Button("Tắt chẩn đoán & đóng") {
+                    Button("Tắt ghi phím và đóng") {
                         keystrokeTrace = false
                         dismiss()
                     }
@@ -117,17 +117,10 @@ struct BugReportGuide: View {
             .padding(.vertical, 14)
         }
         .frame(width: 480, height: 520)
+        .tint(UVieTheme.accent)
     }
 
     // MARK: - Actions
-
-    private func openAdvancedTab() {
-        NotificationCenter.default.post(
-            name: .navigateToSettingsTab,
-            object: nil,
-            userInfo: ["tab": SettingsTab.advanced]
-        )
-    }
 
     private func generateAndCopyDiagnostics() {
         guard let url = Logger.shared.writeDiagnosticsToTempFile() else { return }
@@ -161,7 +154,7 @@ private struct StepView: View {
             // Step number badge
             ZStack {
                 Circle()
-                    .fill(actionDisabled ? Color.green.opacity(0.2) : Color.accentColor.opacity(0.15))
+                    .fill(actionDisabled ? Color.green.opacity(0.2) : UVieTheme.accent.opacity(0.15))
                     .frame(width: 26, height: 26)
                 if actionDisabled {
                     Image(systemName: "checkmark")
@@ -170,7 +163,7 @@ private struct StepView: View {
                 } else {
                     Text("\(number)")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(UVieTheme.accentText)
                 }
             }
             .frame(width: 26, height: 26)

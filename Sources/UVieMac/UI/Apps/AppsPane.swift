@@ -11,6 +11,8 @@ struct AppsPane: View {
     @State private var showingAppPicker = false
     @State private var pickerMode: PickerMode = .excluded
     @State private var availableApps: [RunningApp] = []
+    @AppStorage(DefaultsKey.smartSwitchKey) private var smartSwitchKey: Bool = false
+    @State private var showingResetConfirm = false
 
     private let defaultExcludedApps: [String] = []
 
@@ -21,11 +23,41 @@ struct AppsPane: View {
 
     private let defaultBypassApps: [String] = Array(AppDefaults.bypassApps).sorted()
 
-    enum PickerMode {
+    enum PickerMode: CaseIterable {
         case excluded
         case compound
         case chromium
         case bypass
+
+        /// Menu/checkmark label shown in the unified list row.
+        var label: String {
+            switch self {
+            case .excluded: return "Không gõ tiếng Việt"
+            case .compound: return "Sửa lỗi gợi ý tự động"
+            case .chromium: return "Trình duyệt Chromium"
+            case .bypass:   return "Để phím đi thẳng"
+            }
+        }
+
+        /// "Thêm ứng dụng" menu item: why the user would add an app here.
+        var addLabel: String {
+            switch self {
+            case .excluded: return "Không muốn gõ tiếng Việt ở đó"
+            case .compound: return "Chữ bị lặp hoặc mất dấu khi có gợi ý"
+            case .chromium: return "Trình duyệt Chromium bị lặp chữ"
+            case .bypass:   return "Không gõ được gì trong đó"
+            }
+        }
+
+        /// Plain-language explanation shown in the "Các cách xử lý" footer.
+        var helpText: String {
+            switch self {
+            case .excluded: return "UVie tắt hẳn trong ứng dụng đó. Hợp với game hoặc ứng dụng bạn chỉ gõ tiếng Anh."
+            case .compound: return "Dùng khi gõ ở ô địa chỉ hay ô tìm kiếm mà chữ bị lặp hoặc mất dấu vì ứng dụng tự gợi ý."
+            case .chromium: return "Chrome, Edge, Brave, Arc... cần cách sửa chữ riêng. Thêm trình duyệt Chromium khác nếu bị lặp chữ ở thanh địa chỉ."
+            case .bypass:   return "Dùng khi bạn không gõ được gì trong ứng dụng (máy ảo, giả lập, điều khiển từ xa, game). Ở đó bạn sẽ không gõ được tiếng Việt."
+            }
+        }
     }
 
     struct AppEntry: Identifiable {
@@ -36,256 +68,115 @@ struct AppsPane: View {
 
     var body: some View {
         PaneScroll {
-            PaneSection("Excluded Apps") {
+            PaneSection("Theo ứng dụng") {
                 SettingsCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Tắt UVie for Mac cho các ứng dụng")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-
-                        Text("Tắt UVie for Mac cho các ứng dụng trong danh sách")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-
-                        Divider()
-
-                        if excludedApps.isEmpty {
-                            Text("Chưa có ứng dụng nào")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.tertiary)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.vertical, 20)
-                        } else {
-                            VStack(spacing: 0) {
-                                ForEach(Array(excludedApps.enumerated()), id: \.element.id) { idx, entry in
-                                    AppRow(bundleID: entry.bundleID, icon: entry.icon) {
-                                        removeExcludedApp(at: idx)
-                                    }
-                                    if idx < excludedApps.count - 1 {
-                                        Divider()
-                                    }
-                                }
-                            }
-                        }
-
-                        Divider()
-
-                        HStack {
-                            Button {
-                                pickerMode = .excluded
-                                showingAppPicker = true
-                            } label: {
-                                Label("Thêm ứng dụng", systemImage: "plus")
-                                    .font(.system(size: 12, weight: .medium))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.blue)
-
-                            Spacer()
-
-                            Button {
-                                resetExcludedToDefaults()
-                            } label: {
-                                Text("Reset mặc định")
-                                    .font(.system(size: 11))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
-                        }
-                        .padding(.top, 4)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
+                    SToggleRow("arrow.triangle.2.circlepath",
+                                "Nhớ ngôn ngữ cho từng ứng dụng",
+                                "Bạn gõ tiếng Việt ở Zalo, tiếng Anh ở Terminal? UVie nhớ và tự chuyển mỗi khi bạn đổi ứng dụng.",
+                                $smartSwitchKey)
                 }
             }
 
-            PaneSection("Compound Apps") {
+            PaneSection("Xử lý riêng cho từng ứng dụng") {
                 SettingsCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Các ứng dụng cần xử lý đặc biệt")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                    Text("Ứng dụng nào gõ bị lỗi thì thêm vào đây rồi chọn cách xử lý. Một ứng dụng có thể dùng nhiều cách cùng lúc.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .lineSpacing(1.5)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                        Text("Nếu ứng dụng này có lỗi autocomplete, hãy thêm nó vào danh sách này.")
-                            .font(.system(size: 10))
+                    Divider()
+
+                    if unifiedEntries.isEmpty {
+                        Text("Chưa có ứng dụng nào")
+                            .font(.system(size: 12))
                             .foregroundStyle(.tertiary)
-
-                        Divider()
-
-                        if compoundApps.isEmpty {
-                            Text("Chưa có ứng dụng nào")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.tertiary)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.vertical, 20)
-                        } else {
-                            VStack(spacing: 0) {
-                                ForEach(Array(compoundApps.enumerated()), id: \.element.id) { idx, entry in
-                                    AppRow(bundleID: entry.bundleID, icon: entry.icon) {
-                                        removeCompoundApp(at: idx)
-                                    }
-                                    if idx < compoundApps.count - 1 {
-                                        Divider()
-                                    }
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 20)
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(Array(unifiedEntries.enumerated()), id: \.element.id) { idx, entry in
+                                AppRow(bundleID: entry.bundleID,
+                                       name: Self.displayName(for: entry.bundleID),
+                                       icon: entry.icon) {
+                                    modeMenu(for: entry.bundleID)
+                                }
+                                if idx < unifiedEntries.count - 1 {
+                                    Divider()
                                 }
                             }
                         }
-
-                        Divider()
-
-                        HStack {
-                            Button {
-                                pickerMode = .compound
-                                showingAppPicker = true
-                            } label: {
-                                Label("Thêm ứng dụng", systemImage: "plus")
-                                    .font(.system(size: 12, weight: .medium))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.blue)
-
-                            Spacer()
-
-                            Button {
-                                resetCompoundToDefaults()
-                            } label: {
-                                Text("Reset mặc định")
-                                    .font(.system(size: 11))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
-                        }
-                        .padding(.top, 4)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                }
-            }
 
-            PaneSection("Chromium Browsers") {
-                SettingsCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Chromium Browsers")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                    Divider()
 
-                        Text("Nếu bạn đang sử dụng trình duyệt Chromium-based, hãy thêm nó vào danh sách này.")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-
-                        Divider()
-
-                        if chromiumApps.isEmpty {
-                            Text("Chưa có ứng dụng nào")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.tertiary)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.vertical, 20)
-                        } else {
-                            VStack(spacing: 0) {
-                                ForEach(Array(chromiumApps.enumerated()), id: \.element.id) { idx, entry in
-                                    AppRow(bundleID: entry.bundleID, icon: entry.icon) {
-                                        removeChromiumApp(at: idx)
-                                    }
-                                    if idx < chromiumApps.count - 1 {
-                                        Divider()
-                                    }
+                    HStack {
+                        Menu {
+                            ForEach(PickerMode.allCases, id: \.self) { mode in
+                                Button(mode.addLabel) {
+                                    pickerMode = mode
+                                    showingAppPicker = true
                                 }
                             }
+                        } label: {
+                            Label("Thêm ứng dụng", systemImage: "plus")
+                                .font(.system(size: 12, weight: .medium))
                         }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .foregroundStyle(UVieTheme.accentText)
 
-                        Divider()
+                        Spacer()
 
-                        HStack {
-                            Button {
-                                pickerMode = .chromium
-                                showingAppPicker = true
-                            } label: {
-                                Label("Thêm ứng dụng", systemImage: "plus")
-                                    .font(.system(size: 12, weight: .medium))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.blue)
-
-                            Spacer()
-
-                            Button {
-                                resetChromiumToDefaults()
-                            } label: {
-                                Text("Reset mặc định")
-                                    .font(.system(size: 11))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
+                        Button {
+                            showingResetConfirm = true
+                        } label: {
+                            Text("Về mặc định")
+                                .font(.system(size: 11.5))
                         }
-                        .padding(.top, 4)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 10)
                 }
-            }
-
-            PaneSection("Bypass Apps") {
-                SettingsCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Ứng dụng không nhận sự kiện giả lập")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-
-                        Text("Thêm ứng dụng vào đây nếu bạn KHÔNG GÕ ĐƯỢC gì trong đó (máy ảo, trình giả lập, điều khiển từ xa, game). UVie sẽ để phím đi thẳng thay vì chặn rồi gửi lại — các ứng dụng này bỏ qua sự kiện gửi lại nên phím bị nuốt mất.")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-
-                        Divider()
-
-                        if bypassApps.isEmpty {
-                            Text("Chưa có ứng dụng nào")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.tertiary)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.vertical, 20)
-                        } else {
-                            VStack(spacing: 0) {
-                                ForEach(Array(bypassApps.enumerated()), id: \.element.id) { idx, entry in
-                                    AppRow(bundleID: entry.bundleID, icon: entry.icon) {
-                                        removeBypassApp(at: idx)
-                                    }
-                                    if idx < bypassApps.count - 1 {
-                                        Divider()
-                                    }
-                                }
-                            }
-                        }
-
-                        Divider()
-
-                        HStack {
-                            Button {
-                                pickerMode = .bypass
-                                showingAppPicker = true
-                            } label: {
-                                Label("Thêm ứng dụng", systemImage: "plus")
-                                    .font(.system(size: 12, weight: .medium))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.blue)
-
-                            Spacer()
-
-                            Button {
-                                resetBypassToDefaults()
-                            } label: {
-                                Text("Reset mặc định")
-                                    .font(.system(size: 11))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
-                        }
-                        .padding(.top, 4)
+                .confirmationDialog("Đưa danh sách ứng dụng về mặc định?",
+                                    isPresented: $showingResetConfirm,
+                                    titleVisibility: .visible) {
+                    Button("Về mặc định", role: .destructive) {
+                        resetExcludedToDefaults()
+                        resetCompoundToDefaults()
+                        resetChromiumToDefaults()
+                        resetBypassToDefaults()
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
+                    Button("Huỷ", role: .cancel) {}
+                } message: {
+                    Text("Các ứng dụng bạn tự thêm sẽ bị xoá khỏi danh sách.")
                 }
+
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(PickerMode.allCases, id: \.self) { mode in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(mode.label)
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                Text(mode.helpText)
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    .padding(.top, 6)
+                } label: {
+                    Text("Các cách xử lý nghĩa là gì?")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 2)
             }
         }
         .sheet(isPresented: $showingAppPicker) {
@@ -313,6 +204,145 @@ struct AppsPane: View {
             loadChromiumApps()
             loadBypassApps()
         }
+    }
+
+    // MARK: - Unified List
+
+    /// Union of the four mode lists, de-duplicated by bundle ID and sorted by
+    /// display name (case-insensitive, ties by bundle ID). The icon comes from
+    /// whichever list already resolved one, else the shared icon cache.
+    private var unifiedEntries: [AppEntry] {
+        var byID: [String: NSImage?] = [:]
+        for entry in excludedApps + compoundApps + chromiumApps + bypassApps {
+            if byID[entry.bundleID] == nil || byID[entry.bundleID]! == nil {
+                byID[entry.bundleID] = entry.icon
+            }
+        }
+        return allBundleIDs.map { bundleID in
+            AppEntry(bundleID: bundleID,
+                     icon: byID[bundleID] ?? AppIconCache.shared.icon(for: bundleID))
+        }
+    }
+
+    /// Every bundle ID present in at least one mode list, sorted by display
+    /// name (case-insensitive), ties by bundle ID.
+    private var allBundleIDs: [String] {
+        var ids = Set<String>()
+        for entry in excludedApps + compoundApps + chromiumApps + bypassApps {
+            ids.insert(entry.bundleID)
+        }
+        return ids.sorted {
+            let an = Self.displayName(for: $0).localizedCaseInsensitiveCompare(Self.displayName(for: $1))
+            return an == .orderedSame ? $0 < $1 : an == .orderedAscending
+        }
+    }
+
+    /// Entries of one mode list (the underlying `@State` arrays stay the
+    /// single source of truth).
+    private func entries(for mode: PickerMode) -> [AppEntry] {
+        switch mode {
+        case .excluded: return excludedApps
+        case .compound: return compoundApps
+        case .chromium: return chromiumApps
+        case .bypass:   return bypassApps
+        }
+    }
+
+    /// Modes a bundle ID currently belongs to, in `allCases` order.
+    private func modes(of bundleID: String) -> [PickerMode] {
+        PickerMode.allCases.filter { mode in
+            entries(for: mode).contains { $0.bundleID == bundleID }
+        }
+    }
+
+    /// Toggles a bundle ID in one mode list using the existing add/remove
+    /// functions, so persistence logic is unchanged.
+    private func setMode(_ mode: PickerMode, bundleID: String, on: Bool) {
+        let list = entries(for: mode)
+        if on {
+            guard !list.contains(where: { $0.bundleID == bundleID }) else { return }
+            switch mode {
+            case .excluded: addExcludedApp(bundleID)
+            case .compound: addCompoundApp(bundleID)
+            case .chromium: addChromiumApp(bundleID)
+            case .bypass:   addBypassApp(bundleID)
+            }
+        } else if let idx = list.firstIndex(where: { $0.bundleID == bundleID }) {
+            switch mode {
+            case .excluded: removeExcludedApp(at: idx)
+            case .compound: removeCompoundApp(at: idx)
+            case .chromium: removeChromiumApp(at: idx)
+            case .bypass:   removeBypassApp(at: idx)
+            }
+        }
+    }
+
+    private func removeEverywhere(_ bundleID: String) {
+        for mode in PickerMode.allCases {
+            setMode(mode, bundleID: bundleID, on: false)
+        }
+    }
+
+    /// Trailing menu on each app row: which handling modes apply, plus the
+    /// destructive remove action (replaces the old per-row minus button).
+    private func modeMenu(for bundleID: String) -> some View {
+        let active = modes(of: bundleID)
+        let text: String
+        switch active.count {
+        case 0: text = ""
+        case 1...2: text = active.map(\.label).joined(separator: ", ")
+        default: text = active.prefix(2).map(\.label).joined(separator: ", ")
+                         + " +\(active.count - 2)"
+        }
+        return Menu {
+            ForEach(PickerMode.allCases, id: \.self) { mode in
+                Button {
+                    setMode(mode, bundleID: bundleID,
+                            on: !active.contains(mode))
+                } label: {
+                    Label(mode.label,
+                          systemImage: active.contains(mode) ? "checkmark" : "")
+                }
+            }
+            Divider()
+            Button("Xoá khỏi danh sách", role: .destructive) {
+                removeEverywhere(bundleID)
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(text)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9))
+            }
+            .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .tint(.secondary)
+        .fixedSize()
+    }
+
+    // MARK: - Display Name
+
+    /// Resolved display names, memoized: NSWorkspace lookup is not free and
+    /// `allBundleIDs` sorts by name for every render.
+    @MainActor private static var displayNameCache: [String: String] = [:]
+
+    /// User-facing app name for a bundle ID: the .app bundle's display name
+    /// with a trailing ".app" stripped, falling back to the last bundle-ID
+    /// component when the app is not installed.
+    @MainActor static func displayName(for bundleID: String) -> String {
+        if let cached = displayNameCache[bundleID] { return cached }
+        var name = bundleID
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            let display = FileManager.default.displayName(atPath: url.path)
+            name = display.hasSuffix(".app") ? String(display.dropLast(4)) : display
+        } else if let last = bundleID.split(separator: ".").last {
+            name = String(last)
+        }
+        displayNameCache[bundleID] = name
+        return name
     }
 
     // MARK: - Helper Methods
@@ -490,11 +520,5 @@ struct AppsPane: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    private func appName(from bundleID: String) -> String {
-        let parts = bundleID.split(separator: ".")
-        if let last = parts.last {
-            return String(last)
-        }
-        return bundleID
-    }
 }
+

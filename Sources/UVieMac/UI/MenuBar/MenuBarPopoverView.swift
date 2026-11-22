@@ -31,6 +31,7 @@ struct MenuBarPopoverView: View {
             popoverFooter
         }
         .frame(width: 280)
+        .tint(UVieTheme.accent)
     }
 
     // MARK: Header
@@ -66,12 +67,12 @@ struct MenuBarPopoverView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.down.circle.fill")
                         .font(.system(size: 11, weight: .semibold))
-                    Text("Cập nhật ngay")
+                    Text("Cập nhật")
                         .font(.system(size: 11, weight: .semibold))
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(Color.accentColor, in: Capsule())
+                .background(UVieTheme.accent, in: Capsule())
                 .foregroundStyle(.white)
                 .fixedSize()
             }
@@ -100,7 +101,7 @@ struct MenuBarPopoverView: View {
 
     private var inputMethodRow: some View {
         HStack {
-            Text("Bảng mã")
+            Text("Kiểu gõ")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
             Spacer()
@@ -122,7 +123,7 @@ struct MenuBarPopoverView: View {
             Text(label)
                 .font(.system(size: 11, weight: active ? .semibold : .regular))
                 .frame(width: 46, height: 22)
-                .background(active ? Color.accentColor : .clear,
+                .background(active ? UVieTheme.accent : .clear,
                              in: RoundedRectangle(cornerRadius: 5))
                 .foregroundStyle(active ? .white : .primary)
         }
@@ -134,23 +135,23 @@ struct MenuBarPopoverView: View {
 
     private var featureRows: some View {
         VStack(spacing: 0) {
-            rowLabel("TÍNH NĂNG")
-            toggleRow("brain","Nhớ ngôn ngữ từng app",      $smartSwitchKey)
+            rowLabel("Tính năng")
+            toggleRow("brain",                     "Nhớ ngôn ngữ từng ứng dụng",  $smartSwitchKey)
             toggleRow("textformat",                  "Viết hoa đầu câu",           $uppercaseFirstChar)
-            toggleRow("character.textbox",           "Chính tả hiện đại",          $modernOrthography)
-            rowLabel("GÕ NHANH")
-            toggleRow("g.circle",                    "Viết tắt g→ng, h→nh",      $relaxedCoda)
-            toggleRow("doc.text",                    "Macro văn bản",            $macroEnabled)
+            toggleRow("character.textbox",           "Đặt dấu kiểu mới",            $modernOrthography)
+            rowLabel("Gõ nhanh")
+            toggleRow("g.circle",                    "Viết tắt phụ âm cuối",        $relaxedCoda)
+            toggleRow("doc.text",                    "Gõ tắt",                      $macroEnabled)
 
             // Show when non-Latin layout detected
             if autoDisableOnNonLatinLayout && layoutMonitor.isNonLatinLayout {
-                rowLabel("PHÁT HIỆN LAYOUT")
+                rowLabel("Bàn phím")
                 HStack(spacing: 10) {
                     Image(systemName: "globe")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.orange)
                         .frame(width: 16)
-                    Text("Non-Latin layout - Engine tạm tắt")
+                    Text("Bàn phím không phải Latin, UVie tạm nghỉ")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -164,9 +165,8 @@ struct MenuBarPopoverView: View {
     private func rowLabel(_ text: String) -> some View {
         HStack {
             Text(text)
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.tertiary)
-                .kerning(0.4)
             Spacer()
         }
         .padding(.horizontal, 16)

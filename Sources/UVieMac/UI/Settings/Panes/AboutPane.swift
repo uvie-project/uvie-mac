@@ -30,15 +30,15 @@ struct AboutPane: View {
                         HStack(spacing: 4) {
                             Image(systemName: "doc.text")
                                 .font(.system(size: 10))
-                            Text("Xem changelog")
+                            Text("Có gì mới")
                                 .font(.system(size: 11, weight: .medium))
                         }
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(UVieTheme.accentText)
                     }
                     .buttonStyle(.plain)
                 }
 
-                Text("Bộ gõ Tiếng Việt nhanh, nhẹ và chính xác cho macOS.\nPowered by uvie-rs - zero-cost Rust engine.")
+                Text("Bộ gõ tiếng Việt nhanh, nhẹ cho macOS.\nChạy bằng uvie-rs, engine viết bằng Rust.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -58,12 +58,12 @@ struct AboutPane: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "arrow.down.circle.fill")
                                     .font(.system(size: 13, weight: .semibold))
-                                Text("Cập nhật v\(updateChecker.latestVersion ?? "")")
+                                Text("Cập nhật lên v\(updateChecker.latestVersion ?? "")")
                                     .font(.system(size: 13, weight: .semibold))
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 11)
-                            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 10))
+                            .background(UVieTheme.accent, in: RoundedRectangle(cornerRadius: 10))
                             .foregroundStyle(.white)
                         }
                         .buttonStyle(.plain)
@@ -72,14 +72,14 @@ struct AboutPane: View {
                         // Fallback: manual download link if Sparkle fails
                         if let url = updateChecker.latestReleaseURL {
                             Link(destination: url) {
-                                Text("Tải thủ công")
+                                Text("Tải về thủ công")
                                     .font(.system(size: 11, weight: .medium))
                                     .foregroundStyle(.tertiary)
                             }
                             .buttonStyle(.plain)
                         }
                     } else if let last = updateChecker.lastChecked {
-                        Text("Đã kiểm tra: \(last.formatted(date: .abbreviated, time: .shortened))")
+                        Text("Kiểm tra lần cuối: \(last.formatted(date: .abbreviated, time: .shortened))")
                             .font(.system(size: 11))
                             .foregroundStyle(.tertiary)
                     }
@@ -112,9 +112,9 @@ struct AboutPane: View {
                     // idle (UVie rarely quits, so install-on-quit never fires).
                     Toggle(isOn: $autoInstall) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Tự động cài đặt bản cập nhật")
+                            Text("Tự động cập nhật")
                                 .font(.system(size: 12, weight: .medium))
-                            Text("Tải và cài bản mới ngầm, khởi động lại khi bạn không gõ phím.")
+                            Text("UVie tự tải bản mới và khởi động lại lúc bạn không gõ phím.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -136,7 +136,7 @@ struct AboutPane: View {
                 Divider().frame(height: 20)
                 bugReportButton
                 Divider().frame(height: 20)
-                aboutLink("arrow.down.circle",     "Cập nhật",   "https://github.com/uvie-project/uvie-mac/releases")
+                aboutLink("arrow.down.circle",     "Các phiên bản",   "https://github.com/uvie-project/uvie-mac/releases")
             }
             .padding(.vertical, 10)
         }

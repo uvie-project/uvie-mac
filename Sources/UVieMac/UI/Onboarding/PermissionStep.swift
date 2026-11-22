@@ -14,13 +14,13 @@ struct PermissionStep: View {
             // Icon
             Image(systemName: isTrusted ? "checkmark.shield.fill" : "lock.shield")
                 .font(.system(size: 56, weight: .regular))
-                .foregroundStyle(isTrusted ? Color.accentColor : .secondary)
+                .foregroundStyle(isTrusted ? UVieTheme.accentText : .secondary)
                 .frame(width: 92, height: 92)
 
             VStack(spacing: 6) {
-                Text("Quyền Trợ năng")
+                Text("Cấp quyền Trợ năng")
                     .font(.system(size: 22, weight: .bold))
-                Text("UVie for Mac cần quyền Trợ năng để bắt và xử lý phím gõ.")
+                Text("UVie cần quyền này để đọc phím bạn bấm và thêm dấu tiếng Việt. Phím gõ được xử lý ngay trên máy của bạn.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -33,13 +33,13 @@ struct PermissionStep: View {
                 HStack(spacing: 12) {
                     Image(systemName: isTrusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .font(.system(size: 18))
-                        .foregroundStyle(isTrusted ? Color.accentColor : .secondary)
+                        .foregroundStyle(isTrusted ? UVieTheme.accentText : .secondary)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(isTrusted ? "Trợ năng: đã cấp" : "Trợ năng: chưa cấp")
+                        Text(isTrusted ? "Đã có quyền Trợ năng" : "Chưa có quyền Trợ năng")
                             .font(.system(size: 13, weight: .semibold))
                         Text(isTrusted
-                             ? "Đã cấp quyền Trợ năng"
-                             : "Nhấn nút bên dưới để mở cài đặt Trợ năng")
+                             ? "Bạn có thể tiếp tục."
+                             : "Bấm nút bên dưới, rồi bật UVie trong danh sách.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -53,12 +53,12 @@ struct PermissionStep: View {
                     Button(action: onRequest) {
                         HStack(spacing: 8) {
                             Image(systemName: "lock.open")
-                            Text("Mở System Settings → Trợ năng")
+                            Text("Mở cài đặt Trợ năng")
                                 .font(.system(size: 13, weight: .medium))
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 11)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(UVieTheme.accentText)
                     }
                     .buttonStyle(.plain)
                 }
@@ -71,11 +71,11 @@ struct PermissionStep: View {
                     HStack(spacing: 12) {
                         Image(systemName: inputMonitoringTrusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                             .font(.system(size: 18))
-                            .foregroundStyle(inputMonitoringTrusted ? Color.accentColor : .secondary)
+                            .foregroundStyle(inputMonitoringTrusted ? UVieTheme.accentText : .secondary)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(inputMonitoringTrusted ? "Input Monitoring: đã cấp" : "Input Monitoring: chưa cấp")
+                            Text(inputMonitoringTrusted ? "Đã có quyền Input Monitoring" : "Chưa có quyền Input Monitoring")
                                 .font(.system(size: 13, weight: .semibold))
-                            Text("macOS 15+ yêu cầu thêm quyền này để bắt phím gõ.")
+                            Text("Từ macOS 15, UVie cần thêm quyền này để đọc phím bạn bấm.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
@@ -91,12 +91,12 @@ struct PermissionStep: View {
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "lock.open")
-                                Text("Mở System Settings → Input Monitoring")
+                                Text("Mở cài đặt Input Monitoring")
                                     .font(.system(size: 13, weight: .medium))
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 11)
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(UVieTheme.accentText)
                         }
                         .buttonStyle(.plain)
                     }

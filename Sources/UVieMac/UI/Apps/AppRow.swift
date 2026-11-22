@@ -3,10 +3,11 @@ import AppKit
 
 // MARK: - App Row
 
-struct AppRow: View {
+struct AppRow<Trailing: View>: View {
     let bundleID: String
+    let name: String
     let icon: NSImage?
-    let onRemove: () -> Void
+    @ViewBuilder let trailing: Trailing
 
     var body: some View {
         HStack(spacing: 12) {
@@ -21,35 +22,21 @@ struct AppRow: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(appName(from: bundleID))
+                Text(name)
                     .font(.system(size: 13, weight: .medium))
                 Text(bundleID)
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
+            .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            Button {
-                onRemove()
-            } label: {
-                Image(systemName: "minus.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.red)
-            }
-            .buttonStyle(.plain)
+            trailing
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-    }
-
-    private func appName(from bundleID: String) -> String {
-        let parts = bundleID.split(separator: ".")
-        if let last = parts.last {
-            return String(last)
-        }
-        return bundleID
     }
 }
 

@@ -4,13 +4,25 @@ import SwiftUI
 
 struct GeneralPane: View {
     @AppStorage(DefaultsKey.inputMethod)    private var inputMethod: String = "telex"
-    @AppStorage(DefaultsKey.smartSwitchKey) private var smartSwitchKey: Bool = false
     @AppStorage(DefaultsKey.engineEnabled)  private var engineEnabled: Bool = true
     @AppStorage(DefaultsKey.autoDisableOnNonLatinLayout) private var autoDisableOnNonLatinLayout: Bool = false
     @AppStorage(DefaultsKey.inputMethodHotkeyEnabled) private var hotkeyEnabled: Bool = true
     @AppStorage(DefaultsKey.customToggleEnabled) private var customToggleEnabled: Bool = false
-    @StateObject private var launchAtLogin = LaunchAtLoginManager.shared
+    @AppStorage(Logger.keystrokeTraceKey) private var keystrokeTrace: Bool = false
     @StateObject private var hotkeyManager = GlobalHotkeyManager.shared
+    @StateObject private var layoutMonitor = KeyboardLayoutMonitor.shared
+    @State private var accessibilityTrusted = false
+    @State private var inputMonitoringTrusted = false
+    @State private var tryText = ""
+
+    /// True when at least one status banner condition holds, so the banner
+    /// stack leaves no empty gap above the hero when all are hidden.
+    private var hasBanner: Bool {
+        !accessibilityTrusted
+            || (accessibilityTrusted && !inputMonitoringTrusted)
+            || (autoDisableOnNonLatinLayout && layoutMonitor.isNonLatinLayout)
+            || keystrokeTrace
+    }
 
     private var isVietnameseMode: Binding<Bool> {
         Binding(
@@ -21,24 +33,79 @@ struct GeneralPane: View {
 
     var body: some View {
         PaneScroll {
+            // Status banners: shown only while a condition holds
+            if hasBanner {
+                VStack(spacing: 8) {
+                    if !accessibilityTrusted {
+                        StatusBanner(
+                            icon: "exclamationmark.triangle.fill",
+                            tint: .orange,
+                            title: "UVie chưa có quyền Trợ năng",
+                            message: "Thiếu quyền này UVie không đọc được phím bạn bấm, nên chưa gõ được tiếng Việt.",
+                            actionTitle: "Mở cài đặt Trợ năng",
+                            action: { AccessibilityChecker.openPrivacySettings() }
+                        )
+                    }
+                    if accessibilityTrusted && !inputMonitoringTrusted {
+                        StatusBanner(
+                            icon: "exclamationmark.triangle.fill",
+                            tint: .orange,
+                            title: "UVie chưa có quyền Input Monitoring",
+                            message: "Từ macOS 15, UVie cần thêm quyền này để đọc phím bạn bấm.",
+                            actionTitle: "Mở cài đặt Input Monitoring",
+                            action: { AccessibilityChecker.openInputMonitoringSettings() }
+                        )
+                    }
+                    if autoDisableOnNonLatinLayout && layoutMonitor.isNonLatinLayout {
+                        StatusBanner(
+                            icon: "globe",
+                            tint: .orange,
+                            title: "Đang dùng bàn phím không phải chữ Latin",
+                            message: "UVie tạm nghỉ cho tới khi bạn chuyển về bàn phím Latin."
+                        )
+                    }
+                    if keystrokeTrace {
+                        StatusBanner(
+                            icon: "record.circle",
+                            tint: .orange,
+                            title: "Đang ghi lại phím gõ",
+                            message: "Chỉ nên bật khi báo lỗi. Tắt đi khi bạn đã gửi xong.",
+                            actionTitle: "Tắt",
+                            action: { keystrokeTrace = false }
+                        )
+                    }
+                }
+            }
+
             // Engine master toggle
             SettingsCard {
                 HStack(spacing: 14) {
                     ZStack {
-                        Circle()
-                            .fill(isVietnameseMode.wrappedValue ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.06))
-                            .frame(width: 44, height: 44)
-                        Image(systemName: isVietnameseMode.wrappedValue ? "keyboard.fill" : "keyboard")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(isVietnameseMode.wrappedValue ? Color.accentColor : .secondary)
+                        if isVietnameseMode.wrappedValue {
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(UVieTheme.accent)
+                        } else {
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color(nsColor: .controlBackgroundColor))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
+                                )
+                        }
+                        Text(isVietnameseMode.wrappedValue ? "V" : "E")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundStyle(isVietnameseMode.wrappedValue ? .white : .secondary)
                     }
+                    .frame(width: 44, height: 44)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(isVietnameseMode.wrappedValue ? "Tiếng Việt" : "English")
+                        Text(isVietnameseMode.wrappedValue ? "Đang gõ tiếng Việt" : "Đang gõ tiếng Anh")
                             .font(.system(size: 14, weight: .semibold))
-                        Text(isVietnameseMode.wrappedValue ? "Gõ Tiếng Việt" : "English Keyboard")
-                            .font(.system(size: 11))
-                            .foregroundStyle(isVietnameseMode.wrappedValue ? Color.accentColor : .secondary)
+                        Text(isVietnameseMode.wrappedValue
+                             ? "UVie thêm dấu khi bạn gõ."
+                             : "UVie tạm nghỉ. Phím bạn bấm được giữ nguyên.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
                     }
 
                     Spacer()
@@ -46,82 +113,50 @@ struct GeneralPane: View {
                     Toggle("", isOn: isVietnameseMode)
                         .toggleStyle(.switch)
                         .labelsHidden()
-                        .scaleEffect(1.1)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
                 .contentShape(Rectangle())
                 .onTapGesture { isVietnameseMode.wrappedValue.toggle() }
             }
-            PaneSection("Bảng mã gõ") {
+            PaneSection("Kiểu gõ") {
                 SettingsCard {
-                    // Segmented picker
-                    HStack(spacing: 1) {
-                        imOption("Telex", "telex")
-                        imOption("VNI",   "vni")
-                        imOption("Simple Telex", "simpleTelex")
+                    HStack(spacing: 8) {
+                        imTile("Telex", "telex", KeyExample(["a", "a"], "â"))
+                        imTile("VNI", "vni", KeyExample(["a", "6"], "â"))
+                        imTile("Simple Telex", "simpleTelex", KeyExample(["a", "w"], "ă"))
                     }
-                    .padding(12)
+                    .padding(10)
                 }
             }
 
-            PaneSection("Thông minh") {
+            PaneSection("Gõ thử") {
                 SettingsCard {
-                    SToggleRow("arrow.triangle.2.circlepath",
-                                "Nhớ ngôn ngữ từng ứng dụng",
-                                "Tự động Tiếng Việt / English khi chuyển app",
-                                $smartSwitchKey)
-                }
-            }
-
-            PaneSection("Phát hiện ngôn ngữ") {
-                SettingsCard {
-                    SToggleRow("magnifyingglass",
-                                "Tự động tắt khi dùng layout khác",
-                                "Bỏ qua engine khi keyboard không phải Latin layout",
-                                $autoDisableOnNonLatinLayout)
-                }
-            }
-
-            PaneSection("Hệ thống") {
-                SettingsCard {
-                    HStack(alignment: .center, spacing: 12) {
-                        Image(systemName: "power")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 24, alignment: .center)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Khởi động cùng macOS")
-                                .font(.system(size: 13, weight: .medium))
-                            Text(launchAtLogin.isAvailable
-                                 ? "Tự động chạy khi đăng nhập"
-                                 : "Tính năng không khả dụng")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Toggle("", isOn: $launchAtLogin.isEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .disabled(!launchAtLogin.isAvailable)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if launchAtLogin.isAvailable {
-                            launchAtLogin.isEnabled.toggle()
+                    HStack(spacing: 8) {
+                        TextField("Gõ thử vào đây để xem kết quả", text: $tryText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13))
+                        if !tryText.isEmpty {
+                            Button { tryText = "" } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Xoá")
                         }
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
                 }
             }
 
-            PaneSection("Phím tắt chuyển ngôn ngữ") {
+            PaneSection("Phím tắt đổi ngôn ngữ") {
                 SettingsCard {
                     // Fn toggle (existing)
-                    SToggleRow("command",
-                                "Phím Fn để chuyển nhanh",
-                                "Nhấn phím Fn để bật / tắt Tiếng Việt",
+                    SToggleRow("globe",
+                                "Bấm Fn để đổi ngôn ngữ",
+                                "Bấm rồi thả phím Fn (phím Quả địa cầu) để chuyển giữa tiếng Việt và tiếng Anh.",
                                 $hotkeyEnabled)
 
                     SCardDivider()
@@ -129,14 +164,14 @@ struct GeneralPane: View {
                     // Custom global shortcut
                     HStack(alignment: .center, spacing: 12) {
                         Image(systemName: "keyboard")
-                            .font(.system(size: 16, weight: .medium))
+                            .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(.secondary)
                             .frame(width: 24, alignment: .center)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Phím tắt tuỳ chỉnh")
+                            Text("Phím tắt riêng")
                                 .font(.system(size: 13, weight: .medium))
-                            Text("Phím tắt toàn hệ thống để chuyển ngôn ngữ")
-                                .font(.system(size: 11))
+                            Text("Tự chọn tổ hợp phím, dùng được trong mọi ứng dụng.")
+                                .font(.system(size: 11.5))
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -153,10 +188,10 @@ struct GeneralPane: View {
                         SCardDivider()
                         HStack(spacing: 12) {
                             Image(systemName: "record.circle")
-                                .font(.system(size: 16, weight: .medium))
+                                .font(.system(size: 15, weight: .medium))
                                 .foregroundStyle(.secondary)
                                 .frame(width: 24, alignment: .center)
-                            Text("Lưu phím tắt")
+                            Text("Tổ hợp phím")
                                 .font(.system(size: 13, weight: .medium))
                             Spacer()
                             ShortcutRecorder()
@@ -170,41 +205,38 @@ struct GeneralPane: View {
                 }
             }
         }
+        .onAppear { refreshPermissionState() }
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshPermissionState()
+        }
     }
 
-    private func imOption(_ label: String, _ tag: String) -> some View {
+    private func refreshPermissionState() {
+        accessibilityTrusted = AccessibilityChecker.isTrusted
+        inputMonitoringTrusted = AccessibilityChecker.isInputMonitoringTrusted
+    }
+
+    private func imTile(_ name: String, _ tag: String, _ example: KeyExample) -> some View {
         let active = inputMethod == tag
         return Button { inputMethod = tag } label: {
-            Text(label)
-                .font(.system(size: 13, weight: active ? .semibold : .regular))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
-                .background(active ? Color.accentColor : Color.primary.opacity(0.05),
-                             in: RoundedRectangle(cornerRadius: 7))
-                .foregroundStyle(active ? .white : .primary)
+            VStack(spacing: 8) {
+                Text(name)
+                    .font(.system(size: 13, weight: .semibold))
+                KeyExampleRow([example])
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(
+                active ? UVieTheme.accentSoft : Color.primary.opacity(0.04),
+                in: RoundedRectangle(cornerRadius: UVieTheme.controlRadius)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: UVieTheme.controlRadius)
+                    .strokeBorder(active ? UVieTheme.accent : .clear, lineWidth: 1.5)
+            )
+            .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
-    }
-
-    private func imRow(_ title: String, _ desc: String, tag: String) -> some View {
-        let active = inputMethod == tag
-        return HStack(alignment: .top, spacing: 12) {
-            Image(systemName: active ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(active ? Color.accentColor : .secondary)
-                .font(.system(size: 16))
-                .padding(.top, 1)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 13, weight: .semibold))
-                Text(desc)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(2)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .contentShape(Rectangle())
-        .onTapGesture { inputMethod = tag }
     }
 }

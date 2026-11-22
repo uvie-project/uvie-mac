@@ -56,10 +56,6 @@ struct AppPickerSheet: View {
                                 }
 
                                 Spacer()
-
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.blue)
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
@@ -75,5 +71,6 @@ struct AppPickerSheet: View {
             }
         }
         .frame(width: 400, height: 500)
+        .tint(UVieTheme.accent)
     }
 }

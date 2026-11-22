@@ -7,13 +7,13 @@ struct ReadyStep: View {
         VStack(spacing: 22) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 56, weight: .regular))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(UVieTheme.accentText)
                 .frame(width: 92, height: 92)
 
             VStack(spacing: 6) {
-                Text("Tất cả đã sẵn sàng!")
+                Text("Xong rồi, gõ thử nhé")
                     .font(.system(size: 26, weight: .bold))
-                Text("UVie for Mac đã sẵn sàng để sử dụng.")
+                Text("UVie đang chạy trên thanh menu.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -28,13 +28,13 @@ struct ReadyStep: View {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(UVieTheme.accentText)
                         .frame(width: 24, alignment: .center)
                         .padding(.top, 1)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Khởi động lại UVie for Mac")
+                        Text("Chưa gõ được tiếng Việt?")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Nếu gõ tiếng Việt không hoạt động ngay, hãy thoát và mở lại UVie for Mac để macOS nhận quyền Trợ năng.")
+                        Text("Thoát UVie rồi mở lại để macOS áp dụng quyền vừa cấp.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -48,11 +48,11 @@ struct ReadyStep: View {
 
             // Quick tips
             SettingsCard {
-                tipRow("keyboard",                     "Nhấn biểu tượng V/E trên thanh menu hoặc phím Fn để chuyển ngôn ngữ")
+                tipRow("keyboard",                     "Bấm biểu tượng V/E trên thanh menu hoặc phím Fn để đổi ngôn ngữ.")
                 SCardDivider()
-                tipRow("gearshape",                    "Mở Cài đặt để tuỳ chỉnh bảng mã và tính năng")
+                tipRow("gearshape",                    "Mở Cài đặt để chọn kiểu gõ và bật thêm tính năng.")
                 SCardDivider()
-                tipRow("arrow.triangle.2.circlepath",  "Mode Memory tự động nhớ ngôn ngữ cho từng ứng dụng")
+                tipRow("arrow.triangle.2.circlepath",  "Bật Nhớ ngôn ngữ để UVie tự chuyển theo từng ứng dụng.")
             }
             .frame(maxWidth: 380)
         }

@@ -157,7 +157,7 @@ the `AppContextDetecting` stub at every call site).
   first (otherwise the previous app's composing word is diffed into the new
   one - typing "đó", Cmd+Space, then "w" made Spotlight show "ớ").
   - **Bypass list is user-extendable** (`DefaultsKey.customBypassApps`,
-    Settings → Ứng dụng → "Bypass Apps"): system UI + iOS Simulator ship as
+    Settings → Ứng dụng → app menu "Để phím đi thẳng"): system UI + iOS Simulator ship as
     defaults, and users add apps that ignore synthetic CGEvents (VMs,
     Android emulator, remote-desktop clients, raw-input games). `shouldBypass`
     reads `cachedBypassApps`, so the list is hot-path free.
@@ -215,7 +215,7 @@ the `AppContextDetecting` stub at every call site).
   `MacroManager` / `Logger` and refreshed via
   `UserDefaults.didChangeNotification`. External `defaults write` needs an
   app restart; in-app toggles apply immediately.
-- Custom toggle hotkey (Settings → "Phím tắt tuỳ chỉnh") is detected INSIDE
+- Custom toggle hotkey (Settings → "Phím tắt riêng") is detected INSIDE
   the event tap (`EventTap+Hotkey.handleCustomHotkey`), not only via the
   Carbon `RegisterEventHotKey` in `GlobalHotkeyManager`. Carbon only fires
   when the frontmost app reports the key unhandled — MS Word, Zed and other
@@ -310,7 +310,7 @@ step past the newer words' ends) and type. Implemented by:
     gap `removeSeparator()` goes conservative and marks the surviving
     separator unknown.
 - Gated by `DefaultsKey.editCommittedWords` (default ON, cached in
-  `editCommittedEnabled`, refreshed on settings changes; Settings → Bàn phím
+  `editCommittedEnabled`, refreshed on settings changes; Settings → Gõ phím
   → "Sửa lại từ đã gõ"). Disabled for AX apps (Spotlight) — AX injection
   rewrites the whole field.
 - Known limits: untracked text (pastes, mouse moves) declines safely or
@@ -325,7 +325,7 @@ that renders the composing word through the text-input protocol instead of
 synthetic backspaces. Chromium pays for every synthetic edit in proportion to
 the field's text length, and a tone key is 5-6 edits on the event-tap path;
 the input method needs one. `DefaultsKey.inputSourceModeEnabled` gates it
-(Settings -> Nâng cao -> "Input Source"); with the flag off nothing is
+(Settings -> Hệ thống -> "Bộ gõ hệ thống"); with the flag off nothing is
 installed and the event tap behaves exactly as in v2.
 
 - **One binary, two bundles.** `Sources/UVieMac/App/main.swift` picks the

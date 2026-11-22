@@ -12,29 +12,51 @@ struct WelcomeStep: View {
                 .frame(width: 92, height: 92)
 
             VStack(spacing: 6) {
-                Text("Chào mừng bạn đến với UVie for Mac")
-                    .font(.system(size: 26, weight: .bold))
-                Text("Bộ gõ tiếng Việt nhanh, nhẹ và chính xác cho macOS.")
+                Text("Chào bạn, đây là UVie")
+                    .font(.system(size: 24, weight: .bold))
+                Text("Bộ gõ tiếng Việt nhanh, nhẹ cho macOS.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(5)
+            }
 
-                Text("Powered by uvie-rs — zero-cost Rust engine.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(5)
-                    .frame(maxWidth: 360)
+            // One keycap example at a larger scale
+            HStack(spacing: 3) {
+                ForEach(["v", "i", "e", "e", "j", "t"], id: \.self) { key in
+                    Text(key)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .frame(width: 26, height: 26)
+                        .background {
+                            ZStack(alignment: .bottom) {
+                                RoundedRectangle(cornerRadius: UVieTheme.keycapRadius)
+                                    .fill(Color.primary.opacity(0.22))
+                                    .offset(y: 1)
+                                RoundedRectangle(cornerRadius: UVieTheme.keycapRadius)
+                                    .fill(Color(nsColor: .controlBackgroundColor))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: UVieTheme.keycapRadius)
+                                            .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
+                                    )
+                            }
+                        }
+                }
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 4)
+                Text("việt")
+                    .font(.system(size: 20, weight: .semibold))
+                    .padding(.leading, 4)
             }
 
             // Feature highlights
             SettingsCard {
-                infoRow("bolt",           "Siêu nhanh",    "Xử lý phím gõ tức thì với engine Rust")
+                infoRow("bolt",           "Nhanh",               "Chữ hiện ra ngay khi bạn bấm phím.")
                 SCardDivider()
-                infoRow("checkmark.seal", "Chính xác",     "Bảng mã Telex & VNI chuẩn xác")
+                infoRow("keyboard",       "Gõ theo cách bạn quen", "Telex, VNI hay Simple Telex, đổi lúc nào cũng được.")
                 SCardDivider()
-                infoRow("memorychip",     "Siêu nhẹ",      "Tiêu tốn tài nguyên gần như bằng không")
+                infoRow("memorychip",     "Nhẹ máy",             "Chạy nền trên thanh menu, gần như không tốn pin hay bộ nhớ.")
             }
             .frame(maxWidth: 380)
         }

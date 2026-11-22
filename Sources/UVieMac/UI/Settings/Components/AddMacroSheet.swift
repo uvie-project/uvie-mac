@@ -10,11 +10,11 @@ struct AddMacroSheet: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("Thêm Macro mới")
+            Text("Thêm gõ tắt")
                 .font(.system(size: 16, weight: .semibold))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Viết tắt")
+                Text("Bạn gõ")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                 TextField("Ví dụ: btw", text: $abbreviation)
@@ -23,7 +23,7 @@ struct AddMacroSheet: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Văn bản thay thế")
+                Text("UVie thay bằng")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                 TextField("Ví dụ: by the way", text: $expansion)
@@ -32,7 +32,7 @@ struct AddMacroSheet: View {
             }
 
             HStack(spacing: 12) {
-                Button("Hủy") {
+                Button("Huỷ") {
                     dismiss()
                 }
                 .buttonStyle(.bordered)
@@ -46,5 +46,6 @@ struct AddMacroSheet: View {
         }
         .padding(24)
         .frame(width: 400)
+        .tint(UVieTheme.accent)
     }
 }
