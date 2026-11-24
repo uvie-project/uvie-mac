@@ -22,7 +22,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         if window == nil || window?.isVisible == false {
             let w = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
-                styleMask: [.titled, .closable, .fullSizeContentView],
+                styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
             )
@@ -36,7 +36,12 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
             // Use NSHostingController for better memory management
             let controller = NSHostingController(rootView: SettingsView())
+            // Do not let the hosting controller resize the window to each
+            // pane's ideal size - that made the window jump on tab changes.
+            controller.sizingOptions = []
             w.contentViewController = controller
+            w.setContentSize(NSSize(width: 760, height: 560))
+            w.contentMinSize = NSSize(width: 640, height: 480)
 
             window = w
 
@@ -132,7 +137,7 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 620, minHeight: 460)
+        .frame(minWidth: 640, minHeight: 480)
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(UVieTheme.accent)
         .onReceive(NotificationCenter.default.publisher(for: .navigateToSettingsTab)) { note in
@@ -161,7 +166,8 @@ private struct SidebarRow: View {
                 Text(tab.rawValue)
                     .font(.system(size: 13, weight: selected ? .semibold : .regular))
                     .foregroundStyle(.primary)
-                Spacer()
+                    .lineLimit(1)
+                Spacer(minLength: 0)
                 if showUpdateBadge {
                     Circle()
                         .fill(UVieTheme.accent)

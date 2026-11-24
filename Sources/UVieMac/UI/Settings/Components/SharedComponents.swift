@@ -9,6 +9,9 @@ struct PaneScroll<Content: View>: View {
             VStack(alignment: .leading, spacing: 22) {
                 content
             }
+            // Always fill the pane: a narrow pane's content used to be centered
+            // by the ScrollView, so it shifted sideways between tabs.
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -81,6 +84,8 @@ struct KeyCap: View {
     var body: some View {
         Text(label)
             .font(.system(size: 11, weight: .medium, design: .rounded))
+            .lineLimit(1)
+            .fixedSize()
             .frame(minWidth: 20, minHeight: 20)
             .padding(.horizontal, 5)
             .background {
@@ -120,8 +125,11 @@ struct KeyExampleRow: View {
                         .padding(.leading, 2)
                     Text(example.result)
                         .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                        .fixedSize()
                         .padding(.leading, 2)
                 }
+                .fixedSize()
             }
         }
     }
@@ -152,6 +160,7 @@ struct SToggleRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(description)
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
@@ -212,6 +221,7 @@ struct SActionRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(.primary)
                 Text(description)
                     .font(.system(size: 11.5))
@@ -250,6 +260,7 @@ struct StatusBanner: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(message)
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)

@@ -102,9 +102,21 @@ final class InputSourceComposerTests: XCTestCase {
 
     // MARK: - Cases
 
+    func test_plainStyle_marksWithoutUnderline_markedStyleUnderlines() {
+        let plain = makeComposer(style: "plain")
+        let plainClient = FakeTextClient()
+        type("vie", plain, plainClient)
+        XCTAssertEqual(plainClient.underlinedFlags.last, false)
+
+        let marked = makeComposer(style: "marked")
+        let markedClient = FakeTextClient()
+        type("vie", marked, markedClient)
+        XCTAssertEqual(markedClient.underlinedFlags.last, true)
+    }
+
     /// Every render style covered by the same typing expectations.
     private func forBothStyles(_ body: (InputSourceComposer, FakeTextClient) -> Void) {
-        for style in ["marked", "direct"] {
+        for style in ["marked", "plain", "direct"] {
             let composer = makeComposer(style: style)
             body(composer, FakeTextClient())
         }

@@ -37,6 +37,10 @@ final class InputSourceComposer {
         /// Marked (underlined) text - the stable default, works everywhere
         /// the text-input protocol is implemented.
         case marked
+        /// Marked text drawn WITHOUT the underline: same stable text-input
+        /// path as `.marked`, but the attributed marked string carries
+        /// `underlineStyle = none`, so the word looks like normal text.
+        case plain
         /// Replace the word's UTF-16 range in place - no marked text. Falls
         /// back per-app to `.marked` when the client reports a selection
         /// state the replacement cannot trust.
@@ -119,7 +123,9 @@ final class InputSourceComposer {
         if style == .direct && !directUnsupported.contains(client.clientBundleID) {
             return .direct
         }
-        return .marked
+        // A direct-mode failure falls back to the no-underline marked text
+        // (not the underlined one), keeping the look the user chose.
+        return style == .marked ? .marked : .plain
     }
 
     /// The marked text currently on screen - exposed for the controller and
@@ -277,8 +283,8 @@ final class InputSourceComposer {
     @discardableResult
     private func renderShownWord(_ word: String, style: Style, client: TextInputClient) -> Bool {
         switch style {
-        case .marked:
-            client.setMarkedText(word)
+        case .marked, .plain:
+            client.setMarkedText(word, underlined: style != .plain)
             markedText = word
             return true
         case .direct:
@@ -330,7 +336,7 @@ final class InputSourceComposer {
                     replacementRange: NSRange(location: sel.location - bs, length: bs)
                 )
                 clearDirectState()
-            case .marked:
+            case .marked, .plain:
                 // The ring can no longer prove the marked text matches the
                 // engine's history - commit what is shown and start clean.
                 client.insertText(shown, replacementRange: NSRange(location: NSNotFound, length: 0))
@@ -343,7 +349,7 @@ final class InputSourceComposer {
         // is passed through to the app, never part of it.
         let final = String(shownChars.dropLast(bs)) + out
         switch style {
-        case .marked:
+        case .marked, .plain:
             client.insertText(final, replacementRange: NSRange(location: NSNotFound, length: 0))
             markedText = ""
         case .direct:
@@ -383,7 +389,7 @@ final class InputSourceComposer {
 
     /// Finalize the shown word and drop every engine and render state.
     private func finalizeShown(_ client: TextInputClient, style: Style) {
-        if style == .marked, !markedText.isEmpty {
+        if style != .direct, !markedText.isEmpty {
             client.insertText(markedText, replacementRange: NSRange(location: NSNotFound, length: 0))
         }
         // .direct: the word is already final text - nothing to write.
@@ -448,7 +454,7 @@ final class InputSourceComposer {
     /// text. Returns false when direct-mode preconditions fail.
     private func restoreWord(_ text: String, style: Style, client: TextInputClient) -> Bool {
         switch style {
-        case .marked:
+        case .marked, .plain:
             client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
             return true
         case .direct:

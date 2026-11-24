@@ -106,6 +106,7 @@ struct GeneralPane: View {
                              : "UVie tạm nghỉ. Phím bạn bấm được giữ nguyên.")
                             .font(.system(size: 11.5))
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer()
@@ -170,9 +171,11 @@ struct GeneralPane: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Phím tắt riêng")
                                 .font(.system(size: 13, weight: .medium))
+                                .fixedSize(horizontal: false, vertical: true)
                             Text("Tự chọn tổ hợp phím, dùng được trong mọi ứng dụng.")
                                 .font(.system(size: 11.5))
                                 .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
                         Toggle("", isOn: $customToggleEnabled)
@@ -193,6 +196,7 @@ struct GeneralPane: View {
                                 .frame(width: 24, alignment: .center)
                             Text("Tổ hợp phím")
                                 .font(.system(size: 13, weight: .medium))
+                                .fixedSize(horizontal: false, vertical: true)
                             Spacer()
                             ShortcutRecorder()
                         }

@@ -197,6 +197,7 @@ struct TextFieldModel {
 /// `UVieInputController` wraps the same IMK client in a fresh
 /// `IMKClientAdapter` per keystroke.
 final class TextFieldStore {
+    var underlinedFlags = [Bool]()
     var utf16 = [UInt16]()
     var caret = 0
     var markedRange: Range<Int>?
@@ -256,6 +257,14 @@ class FakeTextClient: TextInputClient {
 
     func selectedRange() -> NSRange {
         NSRange(location: caret - selectionLength, length: selectionLength)
+    }
+
+    /// Every `underlined` flag the composer passed, in call order.
+    var underlinedFlags: [Bool] { store.underlinedFlags }
+
+    func setMarkedText(_ text: String, underlined: Bool) {
+        store.underlinedFlags.append(underlined)
+        setMarkedText(text)
     }
 
     func setMarkedText(_ text: String) {

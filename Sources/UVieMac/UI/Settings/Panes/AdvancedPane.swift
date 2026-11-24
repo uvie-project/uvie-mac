@@ -5,7 +5,7 @@ import SwiftUI
 struct AdvancedPane: View {
     @AppStorage(DefaultsKey.autoDisableOnNonLatinLayout) private var autoDisableOnNonLatinLayout: Bool = false
     @AppStorage(DefaultsKey.inputSourceModeEnabled) private var inputSourceModeFlag: Bool = false
-    @AppStorage(DefaultsKey.inputSourceStyle) private var inputSourceStyle: String = "marked"
+    @AppStorage(DefaultsKey.inputSourceStyle) private var inputSourceStyle: String = "plain"
     @StateObject private var launchAtLogin = LaunchAtLoginManager.shared
     @ObservedObject private var inputSourceMode = InputSourceModeController.shared
 
@@ -40,11 +40,13 @@ struct AdvancedPane: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Mở UVie khi đăng nhập")
                                 .font(.system(size: 13, weight: .medium))
+                                .fixedSize(horizontal: false, vertical: true)
                             Text(launchAtLogin.isAvailable
                                  ? "UVie tự chạy mỗi khi bạn bật máy."
                                  : "Chỉ dùng được với bản cài đặt chính thức.")
                                 .font(.system(size: 11.5))
                                 .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
                         Toggle("", isOn: $launchAtLogin.isEnabled)
@@ -98,14 +100,21 @@ struct AdvancedPane: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Kiểu hiển thị")
                                 .font(.system(size: 13, weight: .medium))
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
                         Picker("", selection: $inputSourceStyle) {
-                            Text("Gạch chân từ đang gõ (ổn định)").tag("marked")
-                            Text("Thay chữ trực tiếp (thử nghiệm)").tag("direct")
+                            Text("Không gạch chân").tag("plain")
+                            Text("Có gạch chân").tag("marked")
                         }
                         .pickerStyle(.menu)
                         .labelsHidden()
+                        .frame(width: 170)
+                        .onAppear {
+                            // The old "replace text directly" option was
+                            // unreliable; move its users to the plain style.
+                            if inputSourceStyle == "direct" { inputSourceStyle = "plain" }
+                        }
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 11)
@@ -120,11 +129,13 @@ struct AdvancedPane: View {
                         Text(inputSourceStatusText)
                             .font(.system(size: 11.5))
                             .foregroundStyle(.secondary)
-                        Spacer()
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
                         Button("Gỡ bộ gõ") {
                             inputSourceMode.uninstall()
                         }
                         .font(.system(size: 12))
+                        .fixedSize()
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 11)

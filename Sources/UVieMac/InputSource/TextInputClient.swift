@@ -15,6 +15,12 @@ protocol TextInputClient: AnyObject {
     /// Show `text` as marked (composing) text with the caret at its end.
     /// An empty string clears the marked text.
     func setMarkedText(_ text: String)
+    /// Same, choosing whether the marked text is drawn underlined.
+    func setMarkedText(_ text: String, underlined: Bool)
+}
+
+extension TextInputClient {
+    func setMarkedText(_ text: String, underlined: Bool) { setMarkedText(text) }
 }
 
 /// Adapts an `IMKTextInput` client to `TextInputClient`.
@@ -38,8 +44,20 @@ final class IMKClientAdapter: TextInputClient {
     }
 
     func setMarkedText(_ text: String) {
+        setMarkedText(text, underlined: true)
+    }
+
+    func setMarkedText(_ text: String, underlined: Bool) {
+        // Clients draw the marked-text underline from the attributes they
+        // receive; an explicit `underlineStyle = none` removes it.
+        let value: Any = underlined ? text : NSAttributedString(
+            string: text,
+            attributes: [
+                .underlineStyle: NSUnderlineStyle([]).rawValue,
+                .markedClauseSegment: 0,
+            ])
         client.setMarkedText(
-            text,
+            value,
             selectionRange: NSRange(location: text.utf16.count, length: 0),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
